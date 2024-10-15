@@ -18,6 +18,10 @@ services:
     volumes:
       - ./data/redis.conf:/usr/local/etc/redis/redis.conf
       - ./data/redis:/data
+    logging:
+      driver: gcplogs
+      options:
+        labels: "redis"
 
   gatekeeper:
     build:
@@ -35,13 +39,13 @@ services:
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"
+    depends_on:
+      - mongodb
+      - redis
     logging:
       driver: gcplogs
       options:
         labels: "gatekeeper"
-    depends_on:
-      - mongodb
-      - redis
 
   keymaster:
     build:
@@ -119,6 +123,7 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
+      - gatekeeper
     logging:
       driver: gcplogs
       options:
@@ -179,3 +184,7 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
+    logging:
+      driver: gcplogs
+      options:
+        labels: "tbtc-mediator"
