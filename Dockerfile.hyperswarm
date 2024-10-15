@@ -12,8 +12,14 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY services/mediators/hyperswarm ./hyperswarm/
+COPY services/instrumentation.cjs ./hyperswarm/
 WORKDIR /app/hyperswarm
 RUN npm ci
 
+# This assumes jaeger is running as a service called "jaeger" via docker.
+ENV OTEL_SERVICE_NAME="hyperswarm"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+
 # Run...
-CMD ["node", "src/hyperswarm-mediator.js"]
+CMD ["node", "--require", "./instrumentation.cjs", "src/hyperswarm-mediator.js"]

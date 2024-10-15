@@ -12,11 +12,17 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY services/keymaster ./keymaster/
+COPY services/instrumentation.cjs ./keymaster/
 
 RUN cd keymaster/client && npm ci && npm run build
 RUN cd keymaster/server && npm ci
 
 WORKDIR /app/keymaster
 
+# This assumes jaeger is running as a service called "jaeger" via docker.
+ENV OTEL_SERVICE_NAME="keymaster"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+
 # Run...
-CMD ["node", "server/src/keymaster-api.js"]
+CMD ["node", "--require", "./instrumentation.cjs", "server/src/keymaster-api.js"]
