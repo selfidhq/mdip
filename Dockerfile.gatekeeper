@@ -12,7 +12,6 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY services/gatekeeper ./gatekeeper/
-COPY services/instrumentation.cjs ./gatekeeper/
 
 RUN cd gatekeeper/client && npm ci && npm run build
 RUN cd gatekeeper/server && npm ci

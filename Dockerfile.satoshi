@@ -12,7 +12,7 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY services/mediators/satoshi ./satoshi/
-COPY services/instrumentation.cjs ./satoshi/
+
 WORKDIR /app/satoshi
 RUN npm ci
 

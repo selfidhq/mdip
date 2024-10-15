@@ -12,7 +12,7 @@ COPY packages/ ./packages/
 RUN npm ci
 
 COPY services/mediators/hyperswarm ./hyperswarm/
-COPY services/instrumentation.cjs ./hyperswarm/
+
 WORKDIR /app/hyperswarm
 RUN npm ci
 
