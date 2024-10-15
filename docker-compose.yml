@@ -3,6 +3,10 @@ services:
     image: mongo:latest
     volumes:
       - ./data/mongodb:/data/db
+    logging:
+      driver: gcplogs
+      options:
+        labels: "mongodb"
 
   gatekeeper:
     build:
@@ -19,6 +23,10 @@ services:
     user: "${KC_UID}:${KC_GID}"
     ports:
       - "4224:4224"
+    logging:
+      driver: gcplogs
+      options:
+        labels: "gatekeeper"
 
   keymaster:
     build:
@@ -35,6 +43,10 @@ services:
       - "4226:4226"
     depends_on:
       - gatekeeper
+    logging:
+      driver: gcplogs
+      options:
+        labels: "keymaster"
 
   hyperswarm:
     build:
@@ -49,6 +61,10 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - gatekeeper
+    logging:
+      driver: gcplogs
+      options:
+        labels: "hyperswarm"
 
   tftc-node:
     build:
@@ -56,6 +72,10 @@ services:
       dockerfile: Dockerfile.ftc
     volumes:
       - ./data/tftc:/root/.feathercoin
+    logging:
+      driver: gcplogs
+      options:
+        labels: "tftc-node"
 
   tftc-mediator:
     build:
@@ -83,11 +103,19 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tftc-node
+    logging:
+      driver: gcplogs
+      options:
+        labels: "tftc-mediator"
 
   tbtc-node:
     image: macterra/bitcoin-core:v27.99.0-2f7d9aec4d04
     volumes:
       - ./data/tbtc:/root/.bitcoin
+    logging:
+      driver: gcplogs
+      options:
+        labels: "tbtc-node"
 
   tbtc-mediator:
     build:
@@ -115,3 +143,7 @@ services:
     user: "${KC_UID}:${KC_GID}"
     depends_on:
       - tbtc-node
+    logging:
+      driver: gcplogs
+      options:
+        labels: "tbtc-mediator"
