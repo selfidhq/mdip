@@ -1,12 +1,23 @@
 services:
   mongodb:
     image: mongo:latest
+    ports:
+      - 27017:27017
     volumes:
       - ./data/mongodb:/data/db
     logging:
       driver: gcplogs
       options:
         labels: "mongodb"
+
+  redis:
+    image: redis:latest
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - 6379:6379
+    volumes:
+      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./data/redis:/data
 
   gatekeeper:
     build:
@@ -18,6 +29,7 @@ services:
       - KC_GATEKEEPER_DB=${KC_GATEKEEPER_DB}
       - KC_GATEKEEPER_REGISTRIES=${KC_GATEKEEPER_REGISTRIES}
       - KC_MONGODB_URL=mongodb://mongodb:27017
+      - KC_REDIS_URL=redis://redis:6379
     volumes:
       - ./data:/app/gatekeeper/data
     user: "${KC_UID}:${KC_GID}"
@@ -27,6 +39,9 @@ services:
       driver: gcplogs
       options:
         labels: "gatekeeper"
+    depends_on:
+      - mongodb
+      - redis
 
   keymaster:
     build:
@@ -40,7 +55,7 @@ services:
       - ./data:/app/keymaster/data
     user: "${KC_UID}:${KC_GID}"
     ports:
-      - "4226:4226"
+      - 4226:4226
     depends_on:
       - gatekeeper
     logging:
