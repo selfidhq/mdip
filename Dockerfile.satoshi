@@ -15,5 +15,10 @@ COPY services/mediators/satoshi ./satoshi/
 WORKDIR /app/satoshi
 RUN npm ci
 
+# This assumes jaeger is running as a service called "jaeger" via docker.
+ENV OTEL_SERVICE_NAME="satoshi"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+
 # Run...
-CMD ["node", "src/satoshi-mediator.js"]
+CMD ["node", "--require", "./instrumentation.js", "src/satoshi-mediator.js"]

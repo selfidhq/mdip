@@ -16,4 +16,4 @@ WORKDIR /app/ipfs
 RUN npm ci
 
 # Run...
-CMD ["node", "src/ipfs-mediator.js"]
+CMD ["node", "--require", "./instrumentation.js", "src/ipfs-mediator.js"]
