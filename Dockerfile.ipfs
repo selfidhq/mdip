@@ -1,5 +1,7 @@
 # Use the official Node.js as the base image
 FROM --platform=linux/amd64 node:18.18.2
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 # Set the working directory
 WORKDIR /app
@@ -14,6 +16,7 @@ RUN npm ci
 COPY services/mediators/ipfs ./ipfs/
 WORKDIR /app/ipfs
 RUN npm ci
-
+RUN chown -R ops:ops /app
+USER ops
 # Run...
 CMD ["node", "--require", "./instrumentation.cjs", "src/ipfs-mediator.js"]

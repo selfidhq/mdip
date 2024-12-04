@@ -1,5 +1,8 @@
 # Use the official Node.js as the base image
 FROM redis:latest
-
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
+RUN chown -R ops:ops /usr
+USER ops
 # Run...
 CMD ["redis-server", "/usr/local/etc/redis/redis.conf"]

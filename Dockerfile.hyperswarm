@@ -1,5 +1,7 @@
 # Use the official Node.js as the base image
 FROM --platform=linux/amd64 node:18.18.2
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 # Set the working directory
 WORKDIR /app
@@ -19,6 +21,7 @@ RUN npm ci
 ENV OTEL_SERVICE_NAME="hyperswarm"
 ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
-
+RUN chown -R ops:ops /app
+USER ops
 # Run...
 CMD ["node", "--require", "./instrumentation.cjs", "src/hyperswarm-mediator.js"]
