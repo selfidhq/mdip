@@ -1,5 +1,5 @@
 # Use the official Node.js as the base image
 FROM redis:latest
-USER redis
+
 # Run...
 CMD ["redis-server", "/usr/local/etc/redis/redis.conf"]
