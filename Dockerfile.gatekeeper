@@ -1,6 +1,7 @@
 # Use the official Node.js as the base image
 FROM --platform=linux/amd64 node:18.18.2
-
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 # Set the working directory
 WORKDIR /app
 
@@ -17,6 +18,12 @@ RUN cd gatekeeper/client && npm ci && npm run build
 RUN cd gatekeeper/server && npm ci
 
 WORKDIR /app/gatekeeper
+RUN chown -R ops:ops /app
+USER ops
+# This assumes jaeger is running as a service called "jaeger" via docker.
+ENV OTEL_SERVICE_NAME="gatekeeper"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
 
 # Run...
-CMD ["node", "server/src/gatekeeper-api.js"]
+CMD ["node", "--require", "./instrumentation.cjs", "server/src/gatekeeper-api.js"]

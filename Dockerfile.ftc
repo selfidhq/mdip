@@ -1,5 +1,7 @@
 # Specifying platform explicitly here is a temp workaround for MacOS
 FROM --platform=linux/amd64 ubuntu:22.04
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 --no-create-home ops
 RUN apt-get update && \
         apt-get install -y wget && \
         apt-get install net-tools
@@ -10,7 +12,10 @@ RUN wget https://github.com/FeatherCoin/Feathercoin/releases/download/v0.19.1/fe
         rm -rf feathercoin-0.19.1-linux64.tar.gz && \
         mv feathercoin* /usr/local/bin/
 
-WORKDIR /root
-RUN mkdir -p /root/.feathercoin
-
-CMD ["feathercoind", "-printtoconsole"]
+WORKDIR /ops
+RUN mkdir -p /ops/.feathercoin
+RUN chown -R ops:ops /ops
+USER ops
+        
+        
+CMD ["feathercoind", "-datadir=/ops/", "-printtoconsole"]
