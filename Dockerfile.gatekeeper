@@ -12,8 +12,8 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY scripts/admin-cli.js ./gatekeeper/
-COPY scripts/keychain-cli.js ./gatekeeper/
+COPY scripts/admin-cli.js ./gatekeeper/scripts/
+COPY scripts/keychain-cli.js ./gatekeeper/scripts/
 
 COPY admin ./gatekeeper/
 COPY kc ./gatekeeper/

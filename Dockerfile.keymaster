@@ -12,8 +12,8 @@ COPY packages/ ./packages/
 # Install dependencies
 RUN npm ci
 
-COPY scripts/admin-cli.js ./keymaster/
-COPY scripts/keychain-cli.js ./keymaster/
+COPY scripts/admin-cli.js ./keymaster/scripts/
+COPY scripts/keychain-cli.js ./keymaster/scripts/
 COPY admin ./keymaster/
 COPY kc ./keymaster/
 
