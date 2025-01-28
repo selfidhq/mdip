@@ -15,8 +15,8 @@ RUN npm ci
 COPY scripts/admin-cli.js ./gatekeeper/
 COPY scripts/keychain-cli.js ./gatekeeper/
 
-COPY admin ./keymaster/
-COPY kc ./keymaster/
+COPY admin ./gatekeeper/
+COPY kc ./gatekeeper/
 
 COPY services/gatekeeper ./gatekeeper/
 
