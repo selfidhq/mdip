@@ -1,5 +1,7 @@
 # Use the official Node.js as the base image
-FROM node:18.18.2-bullseye-slim
+FROM node:18.20.8-bullseye-slim
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 # Set the working directory
 WORKDIR /app
@@ -14,12 +16,17 @@ RUN npm ci
 RUN npm run build
 
 # Make sure dir is owned by user who will build
-RUN chown -R node:node /app/search-server
+RUN chown -R ops:ops /app/search-server
 
-# Switch to node user
-USER node
+# Switch to ops user
+USER ops
 
 WORKDIR /app/search-server
+# This assumes jaeger is running as a service called "jaeger" via docker.
+ENV OTEL_SERVICE_NAME="gatekeeper"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+
 
 RUN npm i
 
