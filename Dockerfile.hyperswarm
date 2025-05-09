@@ -4,7 +4,7 @@ RUN addgroup --system --gid 1001 ops
 RUN adduser --system --uid 1001 ops
 
 # Install Python and other dependencies
-RUN apk add --update python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN apk add --update python3 make g++ cmake && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
