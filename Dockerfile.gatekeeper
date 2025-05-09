@@ -1,32 +1,53 @@
-# Use the official Node.js as the base image
-FROM node:18.20.8-alpine
-RUN addgroup --system --gid 1001 ops
-RUN adduser --system --uid 1001 ops
+# -------- Stage 1: Build (Debian-based) --------
+    FROM node:18.20.8-slim AS build
 
-# Set the working directory
-WORKDIR /app
-
-# Copy package.json and package-lock.json to the working directory
-COPY package*.json ./
-COPY packages/ ./packages/
-
-# Install dependencies
-RUN apk add --update g++ cmake
-RUN npm ci
-RUN npm run build
-
-COPY services/gatekeeper ./gatekeeper/
-
-RUN cd gatekeeper/client && npm ci && npm run build
-RUN cd gatekeeper/server && npm ci && npm run build
-
-WORKDIR /app/gatekeeper
-RUN chown -R ops:ops /app
-USER ops
-# This assumes jaeger is running as a service called "jaeger" via docker.
-ENV OTEL_SERVICE_NAME="gatekeeper"
-ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
-
-# Run...
-CMD ["node", "--require", "./instrumentation.cjs", "server/dist/gatekeeper-api.js"]
+    # System dependencies for building native modules
+    RUN apt-get update && apt-get install -y \
+      build-essential \
+      cmake \
+      git \
+      python3 \
+      libssl-dev
+    
+    # Create app directory
+    WORKDIR /app
+    
+    # Copy and install root packages
+    COPY package*.json ./
+    COPY packages/ ./packages/
+    ENV CXXFLAGS="-std=c++11"
+    RUN npm ci
+    RUN npm run build
+    
+    # Copy gatekeeper service and build it
+    COPY services/gatekeeper ./gatekeeper/
+    WORKDIR /app/gatekeeper
+    RUN cd client && npm ci && npm run build
+    RUN cd server && npm ci && npm run build
+    
+    # -------- Stage 2: Runtime (Alpine-based) --------
+    FROM node:18.20.8-alpine AS runtime
+    
+    # Add non-root user
+    RUN addgroup --system --gid 1001 ops && \
+        adduser --system --uid 1001 ops
+    
+    # Create app directory
+    WORKDIR /app/gatekeeper
+    
+    # Copy built app from previous stage
+    COPY --from=build /app/gatekeeper /app/gatekeeper
+    
+    # Set ownership
+    RUN chown -R ops:ops /app
+    
+    USER ops
+    
+    # OpenTelemetry environment variables
+    ENV OTEL_SERVICE_NAME="gatekeeper"
+    ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+    ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+    
+    # Run the app
+    CMD ["node", "--require", "./instrumentation.cjs", "server/dist/gatekeeper-api.js"]
+    

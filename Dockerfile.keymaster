@@ -11,7 +11,7 @@ COPY package*.json ./
 COPY packages/ ./packages/
 
 # Install dependencies
-RUN apk add --update g++ cmake
+RUN apk add --update make g++ cmake libssl-dev
 RUN npm ci
 RUN npm run build
 

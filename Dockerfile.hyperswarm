@@ -1,32 +1,52 @@
-# Use the official Node.js as the base image
-FROM node:18.20.8-alpine
-RUN addgroup --system --gid 1001 ops
-RUN adduser --system --uid 1001 ops
+# -------- Stage 1: Build (Debian-based) --------
+    FROM node:18.20.8-slim AS build
 
-# Install Python and other dependencies
-RUN apk add --update python3 make g++ cmake && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory
-WORKDIR /app
-
-# Copy package.json and package-lock.json to the working directory
-COPY package*.json ./
-COPY packages/ ./packages/
-
-# Install dependencies
-RUN npm ci
-RUN npm run build
-
-COPY services/mediators/hyperswarm ./hyperswarm/
-WORKDIR /app/hyperswarm
-RUN npm ci && npm run build
-
-# This assumes jaeger is running as a service called "jaeger" via docker.
-ENV OTEL_SERVICE_NAME="hyperswarm"
-ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
-ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
-RUN chown -R ops:ops /app
-USER ops
-
-# Run...
-CMD ["node", "--require", "./instrumentation.cjs", "dist/hyperswarm-mediator.js"]
+    # System dependencies for building native modules
+    RUN apt-get update && apt-get install -y \
+      build-essential \
+      cmake \
+      python3 \
+      git \
+      libssl-dev
+    
+    # Create app directory
+    WORKDIR /app
+    
+    # Copy and install root packages
+    COPY package*.json ./
+    COPY packages/ ./packages/
+    ENV CXXFLAGS="-std=c++11"
+    RUN npm ci
+    RUN npm run build
+    
+    # Copy and build hyperswarm mediator service
+    COPY services/mediators/hyperswarm ./hyperswarm/
+    WORKDIR /app/hyperswarm
+    RUN npm ci && npm run build
+    
+    # -------- Stage 2: Runtime (Alpine-based) --------
+    FROM node:18.20.8-alpine AS runtime
+    
+    # Add non-root user
+    RUN addgroup --system --gid 1001 ops && \
+        adduser --system --uid 1001 ops
+    
+    # Create app directory
+    WORKDIR /app/hyperswarm
+    
+    # Copy built app from previous stage
+    COPY --from=build /app/hyperswarm /app/hyperswarm
+    
+    # Set ownership
+    RUN chown -R ops:ops /app
+    
+    USER ops
+    
+    # OpenTelemetry environment variables
+    ENV OTEL_SERVICE_NAME="hyperswarm"
+    ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+    ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://jaeger:4318"
+    
+    # Run the app
+    CMD ["node", "--require", "./instrumentation.cjs", "dist/hyperswarm-mediator.js"]
+    
