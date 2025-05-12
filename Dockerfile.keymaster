@@ -25,7 +25,7 @@
     
     # Build both client and server
     RUN cd client && npm ci && npm run build
-    RUN cd ../server && npm ci && npm run build
+    RUN cd server && npm ci && npm run build
     
     # -------- Stage 2: Runtime (Alpine-based) --------
     FROM node:18.20.8-alpine AS runtime
