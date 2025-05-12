@@ -2,4 +2,4 @@
 FROM ipfs/kubo:v0.34.1
 
 # Run...
-CMD ["node", "scripts/ipfs-cli.js"]
+CMD ["scripts/ipfs-cli.js"]
