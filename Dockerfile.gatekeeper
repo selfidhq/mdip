@@ -1,5 +1,7 @@
 # Use the official Node.js as the base image
-FROM node:18.18.2-bullseye-slim
+FROM node:22.15.0-bullseye-slim
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 # Set the working directory
 WORKDIR /app
@@ -18,6 +20,8 @@ RUN cd gatekeeper/client && npm ci && npm run build
 RUN cd gatekeeper/server && npm ci && npm run build
 
 WORKDIR /app/gatekeeper
+RUN chown -R ops:ops /app
+USER ops
 
 # Run...
 CMD ["node", "server/dist/gatekeeper-api.js"]
