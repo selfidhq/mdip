@@ -1,2 +1,4 @@
 # Use the official base image
 FROM ipfs/kubo:v0.34.1
+
+CMD ["sh", "-c", "ipfs init && ipfs config --json Routing.AcceleratedDHTClient true && ipfs daemon"]
