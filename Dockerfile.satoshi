@@ -1,5 +1,7 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 # Set the working directory
 WORKDIR /app
@@ -15,6 +17,7 @@ RUN npm run build
 COPY services/mediators/satoshi ./satoshi/
 WORKDIR /app/satoshi
 RUN npm ci && npm run build
-
+RUN chown -R ops:ops /app
+USER ops
 # Run...
 CMD ["node", "dist/satoshi-mediator.js"]
