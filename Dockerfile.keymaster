@@ -1,5 +1,5 @@
 # Use the official Node.js as the base image
-FROM node:22.15.0-bullseye-slim
+FROM node:22.15.0-alpine
 RUN addgroup --system --gid 1001 ops
 RUN adduser --system --uid 1001 ops
 # Set the working directory
