@@ -1,10 +1,12 @@
-# Use the official Node.js as the base image
+# Use the official Node.js Alpine image as the base image
 FROM node:22.15.0-alpine
-RUN addgroup --system --gid 1001 ops
-RUN adduser --system --uid 1001 ops
 
-# Install Python and other dependencies
-RUN apk add --update python3 make g++ py3-setuptools && rm -rf /var/lib/apt/lists/*
+# Create group and user (Alpine syntax)
+RUN addgroup -S -g 1001 ops && \
+    adduser -S -u 1001 -G ops ops
+
+# Install Python and other dependencies (Alpine syntax)
+RUN apk add --no-cache python3 make g++ py3-setuptools
 
 # Set the working directory
 WORKDIR /app
