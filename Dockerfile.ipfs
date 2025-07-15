@@ -1,5 +1,2 @@
-FROM debian:bullseye-slim AS downloader
-RUN apt-get update && apt-get install -y curl
-
+# Use the official base image
 FROM ipfs/kubo:v0.34.1
-COPY --from=downloader /usr/bin/curl /usr/bin/curl
