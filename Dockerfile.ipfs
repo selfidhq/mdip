@@ -1,6 +1,5 @@
-FROM ipfs/kubo:v0.34.1
+FROM debian:bullseye-slim AS downloader
+RUN apt-get update && apt-get install -y curl
 
-USER root
-RUN apt-get update && \
-    apt-get install -y curl --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+FROM ipfs/kubo:v0.34.1
+COPY --from=downloader /usr/bin/curl /usr/bin/curl
