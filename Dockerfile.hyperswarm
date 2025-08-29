@@ -29,4 +29,4 @@ ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector-opentelemetry-collector.otel.svc.cluster.local:4318"
 
 # Run...
-CMD ["node", "--require", "./instrumentation.js", "dist/hyperswarm-mediator.js"]
+CMD ["node", "--require", "./instrumentation.cjs", "dist/hyperswarm-mediator.js"]
