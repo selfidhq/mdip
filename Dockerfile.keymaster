@@ -23,5 +23,9 @@ WORKDIR /app/keymaster
 RUN chown -R ops:ops /app
 USER ops
 
+ENV OTEL_SERVICE_NAME="keymaster"
+ENV OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+ENV OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector-opentelemetry-collector.otel.svc.cluster.local:4318"
+
 # Run...
-CMD ["node", "server/dist/keymaster-api.js"]
+CMD ["node", "--require", "./instrumentation.js", "server/dist/keymaster-api.js"]
