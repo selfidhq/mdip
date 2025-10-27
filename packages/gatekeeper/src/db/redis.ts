@@ -22,9 +22,56 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async start(): Promise<void> {
-        const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
-        this.redis = new Redis(url);
-    }
+    // Sentinel configuration
+    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel.demo.svc.cluster.local';
+    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel.demo.svc.cluster.local';
+    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel.demo.svc.cluster.local';
+    const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
+    const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
+    const password = process.env.KC_REDIS_PASSWORD;
+
+    this.redis = new Redis({
+        sentinels: [
+            { host: sentinelHost0, port: sentinelPort },
+            { host: sentinelHost1, port: sentinelPort },
+            { host: sentinelHost2, port: sentinelPort }
+        ],
+        name: masterName,
+        password: password,
+        // Optional but recommended settings:
+        sentinelPassword: password, // If Sentinel also requires auth (not currently configured)
+        sentinelRetryStrategy: (times) => {
+            // Retry connection to Sentinel
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+        },
+        retryStrategy: (times) => {
+            // Retry connection to Redis master
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+        },
+        // Automatically reconnect on failover
+        enableReadyCheck: true,
+        maxRetriesPerRequest: 3,
+    });
+
+    // Optional: Log connection events
+    this.redis.on('connect', () => {
+        console.log('Connected to Redis');
+    });
+
+    this.redis.on('ready', () => {
+        console.log('Redis connection ready');
+    });
+
+    this.redis.on('error', (err) => {
+        console.error('Redis connection error:', err);
+    });
+
+    this.redis.on('+switch-master', (data) => {
+        console.log('Redis master switched:', data);
+    });
+}
 
     async stop(): Promise<void> {
         if (this.redis) {
