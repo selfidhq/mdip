@@ -22,57 +22,53 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async start(): Promise<void> {
-    // Sentinel configuration
-    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel.demo.svc.cluster.local';
-    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel.demo.svc.cluster.local';
-    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel.demo.svc.cluster.local';
-    const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
-    const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
-    const password = process.env.KC_REDIS_PASSWORD;
-    const password2 = process.env.KC_REDIS_SENTINEL_PASSWORD;
+        // Sentinel configuration
+        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
+        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel-1.redis-sentinel-headless.demo.svc.cluster.local';
+        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel-2.redis-sentinel-headless.demo.svc.cluster.local';
+        const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
+        const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
+        const password = process.env.KC_REDIS_PASSWORD;
+        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
-    this.redis = new Redis({
-        sentinels: [
-            { host: sentinelHost0, port: sentinelPort },
-            { host: sentinelHost1, port: sentinelPort },
-            { host: sentinelHost2, port: sentinelPort }
-        ],
-        name: masterName,
-        password: password,
-        // Optional but recommended settings:
-        sentinelPassword: password2, // If Sentinel also requires auth (not currently configured)
-        sentinelRetryStrategy: (times) => {
-            // Retry connection to Sentinel
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-        },
-        retryStrategy: (times) => {
-            // Retry connection to Redis master
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-        },
-        // Automatically reconnect on failover
-        enableReadyCheck: true,
-        maxRetriesPerRequest: 3,
-    });
+        this.redis = new Redis({
+            sentinels: [
+                { host: sentinelHost0, port: sentinelPort },
+                { host: sentinelHost1, port: sentinelPort },
+                { host: sentinelHost2, port: sentinelPort }
+            ],
+            name: masterName,
+            password: password,
+            sentinelPassword: sentinelPassword,
+            sentinelRetryStrategy: (times) => {
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+            },
+            retryStrategy: (times) => {
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+            },
+            enableReadyCheck: true,
+            maxRetriesPerRequest: 3,
+        });
 
-    // Optional: Log connection events
-    this.redis.on('connect', () => {
-        console.log('Connected to Redis');
-    });
+        // Optional: Log connection events
+        this.redis.on('connect', () => {
+            console.log('Connected to Redis');
+        });
 
-    this.redis.on('ready', () => {
-        console.log('Redis connection ready');
-    });
+        this.redis.on('ready', () => {
+            console.log('Redis connection ready');
+        });
 
-    this.redis.on('error', (err) => {
-        console.error('Redis connection error:', err);
-    });
+        this.redis.on('error', (err) => {
+            console.error('Redis connection error:', err);
+        });
 
-    this.redis.on('+switch-master', (data) => {
-        console.log('Redis master switched:', data);
-    });
-}
+        this.redis.on('+switch-master', (data) => {
+            console.log('Redis master switched:', data);
+        });
+    }
 
     async stop(): Promise<void> {
         if (this.redis) {
