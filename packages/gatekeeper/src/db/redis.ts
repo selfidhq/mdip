@@ -22,50 +22,74 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async start(): Promise<void> {
-        // Sentinel configuration
-        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
-        const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
-        const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
-        const password = process.env.KC_REDIS_PASSWORD;
-        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
+    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
+    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel-1.redis-sentinel-headless.demo.svc.cluster.local';
+    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel-2.redis-sentinel-headless.demo.svc.cluster.local';
+    const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
+    const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
+    const password = process.env.KC_REDIS_PASSWORD;
+    const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
-        this.redis = new Redis({
-            sentinels: [
-                { host: sentinelHost0, port: sentinelPort }
-            ],
-            name: masterName,
-            password: password,
-            sentinelPassword: sentinelPassword,
-            sentinelRetryStrategy: (times) => {
-                const delay = Math.min(times * 50, 2000);
-                return delay;
-            },
-            retryStrategy: (times) => {
-                const delay = Math.min(times * 50, 2000);
-                return delay;
-            },
-            enableReadyCheck: true,
-            maxRetriesPerRequest: 3,
-        });
+    // DETAILED DEBUG
+    console.log('=== Sentinel Connection Debug ===');
+    console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
+    console.log('Sentinel Port:', sentinelPort);
+    console.log('Master Name:', masterName);
+    console.log('Redis Password exists:', !!password, 'length:', password?.length);
+    console.log('Sentinel Password exists:', !!sentinelPassword, 'length:', sentinelPassword?.length);
+    console.log('First 3 chars of sentinel password:', sentinelPassword?.substring(0, 3));
+    console.log('Last 3 chars of sentinel password:', sentinelPassword?.substring(sentinelPassword.length - 3));
+    console.log('=================================');
 
-        // Optional: Log connection events
-        this.redis.on('connect', () => {
-            console.log('Connected to Redis');
-        });
+    const config = {
+        sentinels: [
+            { host: sentinelHost0, port: sentinelPort },
+            { host: sentinelHost1, port: sentinelPort },
+            { host: sentinelHost2, port: sentinelPort }
+        ],
+        name: masterName,
+        password: password,
+        sentinelPassword: sentinelPassword,
+        sentinelRetryStrategy: (times: number) => {
+            console.log(`Sentinel retry attempt ${times}`);
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+        },
+        retryStrategy: (times: number) => {
+            console.log(`Redis retry attempt ${times}`);
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+        },
+        enableReadyCheck: true,
+        maxRetriesPerRequest: 3,
+    };
 
-        this.redis.on('ready', () => {
-            console.log('Redis connection ready');
-        });
+    console.log('Redis config:', JSON.stringify(config, null, 2));
 
-        this.redis.on('error', (err) => {
-            console.error('Redis connection error:', err);
-        });
+    this.redis = new Redis(config);
 
-        this.redis.on('+switch-master', (data) => {
-            console.log('Redis master switched:', data);
-        });
-    }
+    this.redis.on('connect', () => {
+        console.log('Connected to Redis');
+    });
 
+    this.redis.on('ready', () => {
+        console.log('Redis connection ready');
+    });
+
+    this.redis.on('error', (err) => {
+        console.error('Redis connection error:', err);
+        console.error('Error name:', err.name);
+        console.error('Error message:', err.message);
+    });
+
+    this.redis.on('+switch-master', (data) => {
+        console.log('Redis master switched:', data);
+    });
+    
+    this.redis.on('+sentinel', (data) => {
+        console.log('Sentinel event:', data);
+    });
+}
     async stop(): Promise<void> {
         if (this.redis) {
             await this.redis.quit()
