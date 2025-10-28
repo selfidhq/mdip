@@ -29,6 +29,7 @@ export default class DbRedis implements GatekeeperDb {
     const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
     const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
     const password = process.env.KC_REDIS_PASSWORD;
+    const password2 = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
     this.redis = new Redis({
         sentinels: [
@@ -39,7 +40,7 @@ export default class DbRedis implements GatekeeperDb {
         name: masterName,
         password: password,
         // Optional but recommended settings:
-        sentinelPassword: password, // If Sentinel also requires auth (not currently configured)
+        sentinelPassword: password2, // If Sentinel also requires auth (not currently configured)
         sentinelRetryStrategy: (times) => {
             // Retry connection to Sentinel
             const delay = Math.min(times * 50, 2000);
