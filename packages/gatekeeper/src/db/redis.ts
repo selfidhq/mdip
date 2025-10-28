@@ -24,8 +24,6 @@ export default class DbRedis implements GatekeeperDb {
     async start(): Promise<void> {
         // Sentinel configuration
         const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
-        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel-1.redis-sentinel-headless.demo.svc.cluster.local';
-        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel-2.redis-sentinel-headless.demo.svc.cluster.local';
         const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
@@ -33,9 +31,7 @@ export default class DbRedis implements GatekeeperDb {
 
         this.redis = new Redis({
             sentinels: [
-                { host: sentinelHost0, port: sentinelPort },
-                { host: sentinelHost1, port: sentinelPort },
-                { host: sentinelHost2, port: sentinelPort }
+                { host: sentinelHost0, port: sentinelPort }
             ],
             name: masterName,
             password: password,
