@@ -18,13 +18,22 @@ export default class WalletRedis extends AbstractBase {
         super();
         
         // Sentinel configuration from environment variables
-        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
-        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel-1.redis-sentinel-headless.demo.svc.cluster.local';
-        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel-2.redis-sentinel-headless.demo.svc.cluster.local';
+        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
+        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
+        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
         const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
-        const password2 = process.env.KC_REDIS_SENTINEL_PASSWORD;
+        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
+
+        // DETAILED LOGGING
+        console.log('=== Sentinel Connection Debug ===');
+        console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
+        console.log('Sentinel Port:', sentinelPort);
+        console.log('Master Name:', masterName);
+        console.log('Redis Password exists:', !!password, 'length:', password?.length);
+        console.log('Sentinel Password exists:', !!sentinelPassword, 'length:', sentinelPassword?.length);
+        console.log('=================================');
         
         this.walletKey = walletKey;
         this.masterName = masterName;
@@ -38,7 +47,7 @@ export default class WalletRedis extends AbstractBase {
             ],
             name: masterName,
             password: password,
-            sentinelPassword: password2, // If Sentinel also requires auth (not currently configured)
+            sentinelPassword: sentinelPassword, // If Sentinel also requires auth (not currently configured)
             sentinelRetryStrategy: (times) => {
                 // Retry connection to Sentinel
                 const delay = Math.min(times * 50, 2000);
@@ -55,14 +64,28 @@ export default class WalletRedis extends AbstractBase {
         });
 
         // Optional: Event listeners
+        this.redis.on('connect', () => {
+        console.log('Connected to Redis');
+        });
+
+        this.redis.on('ready', () => {
+            console.log('Redis connection ready');
+        });
+
         this.redis.on('error', (err) => {
             console.error('Redis connection error:', err);
+            console.error('Error name:', err.name);
+            console.error('Error message:', err.message);
         });
 
         this.redis.on('+switch-master', (data) => {
             console.log('Redis master switched:', data);
         });
-    }
+        
+        this.redis.on('+sentinel', (data) => {
+            console.log('Sentinel event:', data);
+        });
+}
 
     // Getter that dynamically returns the current connection info
     get url(): string {

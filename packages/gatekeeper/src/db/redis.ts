@@ -22,23 +22,21 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async start(): Promise<void> {
-    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0 || 'redis-sentinel-0.redis-sentinel-headless.demo.svc.cluster.local';
-    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1 || 'redis-sentinel-1.redis-sentinel-headless.demo.svc.cluster.local';
-    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2 || 'redis-sentinel-2.redis-sentinel-headless.demo.svc.cluster.local';
+    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
+    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
+    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
     const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
     const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
     const password = process.env.KC_REDIS_PASSWORD;
     const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
-    // DETAILED DEBUG
+    // DETAILED LOGGING
     console.log('=== Sentinel Connection Debug ===');
     console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
     console.log('Sentinel Port:', sentinelPort);
     console.log('Master Name:', masterName);
     console.log('Redis Password exists:', !!password, 'length:', password?.length);
     console.log('Sentinel Password exists:', !!sentinelPassword, 'length:', sentinelPassword?.length);
-    console.log('First 3 chars of sentinel password:', sentinelPassword?.substring(0, 3));
-    console.log('Last 3 chars of sentinel password:', sentinelPassword?.substring(sentinelPassword.length - 3));
     console.log('=================================');
 
     const config = {
