@@ -60,8 +60,7 @@ export default class DbRedis implements GatekeeperDb {
         maxRetriesPerRequest: 3,
     };
 
-    console.log('Redis config:', JSON.stringify(config, null, 2));
-
+    
     this.redis = new Redis(config);
 
     this.redis.on('connect', () => {
