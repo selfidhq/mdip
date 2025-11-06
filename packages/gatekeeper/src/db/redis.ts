@@ -26,17 +26,15 @@ export default class DbRedis implements GatekeeperDb {
     const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
     const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
     const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
-    const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
+    const masterName = process.env.KC_REDIS_MASTER_NAME;
     const password = process.env.KC_REDIS_PASSWORD;
     const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
     // DETAILED LOGGING
     console.log('=== Sentinel Connection Debug ===');
     console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
-    console.log('Sentinel Port:', sentinelPort);
-    console.log('Master Name:', masterName);
-    console.log('Redis Password exists:', !!password, 'length:', password?.length);
-    console.log('Sentinel Password exists:', !!sentinelPassword, 'length:', sentinelPassword?.length);
+    console.log('Redis Password exists:', !!password);
+    console.log('Sentinel Password exists:', !!sentinelPassword);
     console.log('=================================');
 
     const config = {

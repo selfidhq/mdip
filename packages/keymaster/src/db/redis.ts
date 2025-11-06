@@ -29,10 +29,8 @@ export default class WalletRedis extends AbstractBase {
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
-        console.log('Sentinel Port:', sentinelPort);
-        console.log('Master Name:', masterName);
-        console.log('Redis Password exists:', !!password, 'length:', password?.length);
-        console.log('Sentinel Password exists:', !!sentinelPassword, 'length:', sentinelPassword?.length);
+        console.log('Redis Password exists:', !!password);
+        console.log('Sentinel Password exists:', !!sentinelPassword);
         console.log('=================================');
         
         this.walletKey = walletKey;
