@@ -32,7 +32,7 @@ const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
     username: config.user,
     password: config.pass,
-    host: `http://${config.host}:${config.port}`,
+    host: config.host,
     ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 const inscription = new Inscription({
@@ -657,7 +657,7 @@ async function exportLoop(): Promise<void> {
 async function waitForChain() {
     let isReady = false;
 
-    console.log(`Connecting to ${config.chain} node on ${config.host}:${config.port} using wallet '${config.wallet}'`);
+    console.log(`Connecting to ${config.chain} node on ${config.host} using wallet '${config.wallet}'`);
 
     while (!isReady) {
         try {
