@@ -1,6 +1,9 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
 
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
+
 # Set the working directory
 WORKDIR /app
 
@@ -14,10 +17,10 @@ RUN npm ci
 RUN npm run build
 
 # Make sure dir is owned by user who will build
-RUN chown -R node:node /app/search-server
+RUN chown -R ops:ops /app/search-server
 
-# Switch to node user
-USER node
+# Switch to ops user
+USER ops
 
 WORKDIR /app/search-server
 
@@ -28,4 +31,3 @@ EXPOSE 4002
 
 # Run...
 CMD ["node", "dist/index.js"]
-
