@@ -6,7 +6,10 @@ export default class WalletRedis extends AbstractBase {
     private readonly walletKey: string;
     private readonly masterName: string;
     private readonly sentinelPort: number;
-    private redis: Redis | null
+    private readonly sentinelHosts: Array<{host: string, port: number}>;
+    private readonly password?: string;
+    private readonly sentinelPassword?: string;
+    private redis: Redis | null = null;
 
     public static async create(walletKey: string = 'wallet'): Promise<WalletRedis> {
         const wallet = new WalletRedis(walletKey);
@@ -36,34 +39,56 @@ export default class WalletRedis extends AbstractBase {
         this.walletKey = walletKey;
         this.masterName = masterName;
         this.sentinelPort = sentinelPort;
-        
+        this.password = password;
+        this.sentinelPassword = sentinelPassword;
+        this.sentinelHosts = [
+            { host: sentinelHost0!, port: sentinelPort },
+            { host: sentinelHost1!, port: sentinelPort },
+            { host: sentinelHost2!, port: sentinelPort }
+        ];
+    }
+
+    // Getter that dynamically returns the current connection info
+    get url(): string {
+        if (this.redis && this.redis.options && this.redis.options.sentinels) {
+            const currentSentinel = this.redis.options.sentinels[0];
+            return `sentinel://${currentSentinel.host}:${currentSentinel.port}/${this.masterName}`;
+        }
+        return `sentinel://unknown:${this.sentinelPort}/${this.masterName}`;
+    }
+
+    async connect(): Promise<void> {
+        // Don't create a new connection if already connected
+        if (this.redis && this.redis.status === 'ready') {
+            console.log('Redis already connected');
+            return;
+        }
+
+        // Clean up any existing connection
+        if (this.redis) {
+            await this.disconnect();
+        }
+
         this.redis = new Redis({
-            sentinels: [
-                { host: sentinelHost0, port: sentinelPort },
-                { host: sentinelHost1, port: sentinelPort },
-                { host: sentinelHost2, port: sentinelPort }
-            ],
-            name: masterName,
-            password: password,
-            sentinelPassword: sentinelPassword, // If Sentinel also requires auth (not currently configured)
+            sentinels: this.sentinelHosts,
+            name: this.masterName,
+            password: this.password,
+            sentinelPassword: this.sentinelPassword,
             sentinelRetryStrategy: (times) => {
-                // Retry connection to Sentinel
                 const delay = Math.min(times * 50, 2000);
                 return delay;
             },
             retryStrategy: (times) => {
-                // Retry connection to Redis master
                 const delay = Math.min(times * 50, 2000);
                 return delay;
             },
-            // Automatically reconnect on failover
             enableReadyCheck: true,
             maxRetriesPerRequest: 3,
         });
 
-        // Optional: Event listeners
+        // Event listeners
         this.redis.on('connect', () => {
-        console.log('Connected to Redis');
+            console.log('Connected to Redis');
         });
 
         this.redis.on('ready', () => {
@@ -83,38 +108,35 @@ export default class WalletRedis extends AbstractBase {
         this.redis.on('+sentinel', (data) => {
             console.log('Sentinel event:', data);
         });
-}
 
-    // Getter that dynamically returns the current connection info
-    get url(): string {
-        if (this.redis && this.redis.options && this.redis.options.sentinels) {
-            const currentSentinel = this.redis.options.sentinels[0];
-            return `sentinel://${currentSentinel.host}:${currentSentinel.port}/${this.masterName}`;
-        }
-        return `sentinel://unknown:${this.sentinelPort}/${this.masterName}`;
-    }
+        // Wait for connection to be ready
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Redis connection timeout'));
+            }, 10000); // 10 second timeout
 
-    async connect(): Promise<void> {
-        // Connection is already established in constructor
-        // Just ensure it's ready
-        if (this.redis && this.redis.status !== 'ready') {
-            await new Promise((resolve, reject) => {
-                this.redis!.once('ready', resolve);
-                this.redis!.once('error', reject);
+            this.redis!.once('ready', () => {
+                clearTimeout(timeout);
+                resolve();
             });
-        }
+            
+            this.redis!.once('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
+            });
+        });
     }
 
     async disconnect() {
         if (this.redis) {
-            await this.redis.quit()
-            this.redis = null
+            await this.redis.quit();
+            this.redis = null;
         }
     }
 
     async saveWallet(wallet: StoredWallet, overwrite: boolean = false): Promise<boolean> {
         if (!this.redis) {
-            throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().')
+            throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().');
         }
 
         const exists = await this.redis.exists(this.walletKey);
@@ -128,7 +150,7 @@ export default class WalletRedis extends AbstractBase {
 
     async loadWallet(): Promise<StoredWallet> {
         if (!this.redis) {
-            throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().')
+            throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().');
         }
 
         const walletJson = await this.redis.get(this.walletKey);
