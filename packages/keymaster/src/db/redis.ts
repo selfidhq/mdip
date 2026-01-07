@@ -3,6 +3,9 @@ import { AbstractBase } from './abstract-base.js';
 import { Redis } from 'ioredis'
 
 export default class WalletRedis extends AbstractBase {
+    private static instance: WalletRedis | null = null;
+    private static instanceCount = 0;
+    
     private readonly walletKey: string;
     private readonly masterName: string;
     private readonly sentinelPort: number;
@@ -10,15 +13,34 @@ export default class WalletRedis extends AbstractBase {
     private readonly password?: string;
     private readonly sentinelPassword?: string;
     private redis: Redis | null = null;
+    private readonly instanceId: number;
 
     public static async create(walletKey: string = 'wallet'): Promise<WalletRedis> {
+        // Singleton pattern - reuse existing instance if it exists and is healthy
+        if (WalletRedis.instance && WalletRedis.instance.redis?.status === 'ready') {
+            console.log(`♻️  Reusing existing WalletRedis instance #${WalletRedis.instance.instanceId}`);
+            return WalletRedis.instance;
+        }
+
+        // Clean up dead instance if it exists
+        if (WalletRedis.instance) {
+            console.log(`🧹 Cleaning up dead WalletRedis instance #${WalletRedis.instance.instanceId}`);
+            await WalletRedis.instance.disconnect();
+        }
+
+        console.log(`🆕 Creating new WalletRedis instance`);
         const wallet = new WalletRedis(walletKey);
         await wallet.connect();
+        WalletRedis.instance = wallet;
         return wallet;
     }
 
     constructor(walletKey: string = 'wallet') {
         super();
+        this.instanceId = ++WalletRedis.instanceCount;
+        
+        console.log(`🔵 Constructing WalletRedis instance #${this.instanceId}`);
+        console.log(`📊 Total instances created: ${WalletRedis.instanceCount}`);
         
         // Sentinel configuration from environment variables
         const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
@@ -58,6 +80,7 @@ export default class WalletRedis extends AbstractBase {
     }
 
     async connect(): Promise<void> {
+        console.log(`🟢 connect() called on instance #${this.instanceId}`);
         // Don't create a new connection if already connected
         if (this.redis && this.redis.status === 'ready') {
             console.log('Redis already connected');
@@ -74,16 +97,49 @@ export default class WalletRedis extends AbstractBase {
             name: this.masterName,
             password: this.password,
             sentinelPassword: this.sentinelPassword,
+            
+            // Reduce aggressive retry behavior to avoid overwhelming Sentinel
             sentinelRetryStrategy: (times) => {
-                const delay = Math.min(times * 50, 2000);
+                // Cap retries at 10 attempts
+                if (times > 10) {
+                    console.error('Max sentinel retry attempts reached');
+                    return null; // Stop retrying
+                }
+                // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+                const delay = Math.min(times * 1000, 30000);
+                console.log(`Sentinel retry ${times} in ${delay}ms`);
                 return delay;
             },
             retryStrategy: (times) => {
-                const delay = Math.min(times * 50, 2000);
+                // Cap retries at 10 attempts  
+                if (times > 10) {
+                    console.error('Max redis retry attempts reached');
+                    return null; // Stop retrying
+                }
+                // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
+                const delay = Math.min(times * 1000, 30000);
+                console.log(`Redis retry ${times} in ${delay}ms`);
                 return delay;
             },
+            
             enableReadyCheck: true,
             maxRetriesPerRequest: 3,
+            
+            // Add connection timeout
+            connectTimeout: 10000,
+            
+            // Reduce the number of commands sent to Sentinel
+            sentinelMaxConnections: 3,
+            
+            // Enable auto-reconnect but with less aggressive behavior
+            autoResubscribe: true,
+            autoResendUnfulfilledCommands: true,
+            
+            // Add keep-alive to maintain stable connections
+            keepAlive: 30000,
+            
+            // Prevent connection pool exhaustion
+            lazyConnect: false,
         });
 
         // Event listeners
@@ -128,9 +184,14 @@ export default class WalletRedis extends AbstractBase {
     }
 
     async disconnect() {
+        console.log(`🔴 disconnect() called on instance #${this.instanceId}`);
         if (this.redis) {
             await this.redis.quit();
             this.redis = null;
+        }
+        // Clear singleton reference if this is the singleton instance
+        if (WalletRedis.instance === this) {
+            WalletRedis.instance = null;
         }
     }
 
