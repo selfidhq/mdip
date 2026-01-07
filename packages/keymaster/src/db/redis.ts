@@ -120,31 +120,35 @@ export default class WalletRedis extends AbstractBase {
                 return delay;
             },
             
-            // Increase timeouts to handle network instability
-            connectTimeout: 30000, // 30 seconds instead of 10
-            commandTimeout: 10000, // 10 seconds for commands
+            // Connection timeouts
+            connectTimeout: 30000,
+            commandTimeout: 10000,
             
-            // Keep connections alive to detect failures faster
-            keepAlive: 10000, // Send keepalive every 10s
+            // CRITICAL: Keep connection alive to prevent Redis from closing it
+            keepAlive: 5000, // Send TCP keepalive every 5 seconds
+            noDelay: true, // Disable Nagle's algorithm for faster responses
             
-            // Only try to reconnect once per sentinel
-            sentinelMaxConnections: 1,
-            
-            // Don't auto-reconnect on every error - be more conservative
+            // Disable automatic reconnection behaviors that create new connections
             enableReadyCheck: true,
-            autoResubscribe: false, // Disable auto-resubscribe
-            autoResendUnfulfilledCommands: false, // Don't resend automatically
+            autoResubscribe: false,
+            autoResendUnfulfilledCommands: false,
             
-            // Add reconnection backoff
+            // Only reconnect on READONLY errors (failover)
             reconnectOnError: (err) => {
                 console.error('🔴 Redis error, evaluating reconnect:', err.message);
-                // Only reconnect on specific errors
                 const targetError = 'READONLY';
                 if (err.message.includes(targetError)) {
-                    return true; // Reconnect
+                    return true;
                 }
-                return false; // Don't reconnect on other errors
+                return false;
             },
+            
+            // CRITICAL: Connection pool settings
+            maxRetriesPerRequest: 3,
+            enableOfflineQueue: true, // Queue commands if disconnected
+            
+            // Only use one connection to sentinel at a time
+            sentinelMaxConnections: 1,
             
             lazyConnect: false,
         });
@@ -164,6 +168,8 @@ export default class WalletRedis extends AbstractBase {
 
         this.redis.on('close', () => {
             console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
+            // Try to log the stack trace to see what's closing the connection
+            console.trace('Connection close stack trace:');
         });
 
         this.redis.on('reconnecting', (delay: number) => {
