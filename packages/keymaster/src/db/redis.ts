@@ -166,7 +166,7 @@ export default class WalletRedis extends AbstractBase {
             console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
         });
 
-        this.redis.on('reconnecting', (delay) => {
+        this.redis.on('reconnecting', (delay: number) => {
             console.warn(`🔄 [Instance #${this.instanceId}] Redis reconnecting in ${delay}ms`);
         });
 
