@@ -14,6 +14,7 @@ export default class WalletRedis extends AbstractBase {
     private readonly sentinelPassword?: string;
     private redis: Redis | null = null;
     private readonly instanceId: number;
+    private keepaliveInterval: NodeJS.Timeout | null = null;
 
     public static async create(walletKey: string = 'wallet'): Promise<WalletRedis> {
         // Singleton pattern - reuse existing instance if it exists and is healthy
@@ -54,6 +55,7 @@ export default class WalletRedis extends AbstractBase {
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
+        console.log('Master Name:', masterName);
         console.log('Redis Password exists:', !!password);
         console.log('Sentinel Password exists:', !!sentinelPassword);
         console.log('=================================');
@@ -98,13 +100,13 @@ export default class WalletRedis extends AbstractBase {
             password: this.password,
             sentinelPassword: this.sentinelPassword,
             
-            // CRITICAL: Reduce retry aggressiveness
+            // CRITICAL: Only connect to master, never to replicas
+            role: 'master',
             sentinelRetryStrategy: (times) => {
                 if (times > 5) {
                     console.error(`❌ Max sentinel retry attempts (${times}) reached - stopping retries`);
-                    return null; // Stop retrying
+                    return null;
                 }
-                // Much longer backoff: 5s, 10s, 15s, 20s, 25s
                 const delay = times * 5000;
                 console.log(`⏳ Sentinel retry ${times} in ${delay}ms`);
                 return delay;
@@ -114,7 +116,6 @@ export default class WalletRedis extends AbstractBase {
                     console.error(`❌ Max redis retry attempts (${times}) reached - stopping retries`);
                     return null;
                 }
-                // Much longer backoff: 5s, 10s, 15s, 20s, 25s
                 const delay = times * 5000;
                 console.log(`⏳ Redis retry ${times} in ${delay}ms`);
                 return delay;
@@ -124,12 +125,14 @@ export default class WalletRedis extends AbstractBase {
             connectTimeout: 30000,
             commandTimeout: 10000,
             
-            // CRITICAL: Keep connection alive to prevent Redis from closing it
-            keepAlive: 5000, // Send TCP keepalive every 5 seconds
-            noDelay: true, // Disable Nagle's algorithm for faster responses
+            // CRITICAL: Keep connection alive
+            keepAlive: 5000,
+            noDelay: true,
             
-            // Disable automatic reconnection behaviors that create new connections
+            // Connection validation
             enableReadyCheck: true,
+            
+            // Disable auto behaviors that could cause reconnections
             autoResubscribe: false,
             autoResendUnfulfilledCommands: false,
             
@@ -143,12 +146,15 @@ export default class WalletRedis extends AbstractBase {
                 return false;
             },
             
-            // CRITICAL: Connection pool settings
+            // Connection pool settings
             maxRetriesPerRequest: 3,
-            enableOfflineQueue: true, // Queue commands if disconnected
+            enableOfflineQueue: true,
             
             // Only use one connection to sentinel at a time
             sentinelMaxConnections: 1,
+            
+            // CRITICAL: Prefer connecting to sentinels in order, don't randomize
+            sentinelCommandTimeout: 10000,
             
             lazyConnect: false,
         });
@@ -160,6 +166,9 @@ export default class WalletRedis extends AbstractBase {
 
         this.redis.on('ready', () => {
             console.log(`🟢 [Instance #${this.instanceId}] Redis connection ready`);
+            
+            // Start keepalive pings to prevent idle timeout
+            this.startKeepalive();
         });
 
         this.redis.on('error', (err) => {
@@ -170,6 +179,9 @@ export default class WalletRedis extends AbstractBase {
             console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
             // Try to log the stack trace to see what's closing the connection
             console.trace('Connection close stack trace:');
+            
+            // Stop keepalive when connection closes
+            this.stopKeepalive();
         });
 
         this.redis.on('reconnecting', (delay: number) => {
@@ -212,6 +224,10 @@ export default class WalletRedis extends AbstractBase {
 
     async disconnect() {
         console.log(`🔴 disconnect() called on instance #${this.instanceId}`);
+        
+        // Stop keepalive
+        this.stopKeepalive();
+        
         if (this.redis) {
             await this.redis.quit();
             this.redis = null;
@@ -219,6 +235,34 @@ export default class WalletRedis extends AbstractBase {
         // Clear singleton reference if this is the singleton instance
         if (WalletRedis.instance === this) {
             WalletRedis.instance = null;
+        }
+    }
+
+    private startKeepalive() {
+        // Stop any existing keepalive
+        this.stopKeepalive();
+        
+        // Send PING every 30 seconds (well under the 300s timeout)
+        // This keeps the connection from being considered idle
+        this.keepaliveInterval = setInterval(async () => {
+            if (this.redis && this.redis.status === 'ready') {
+                try {
+                    await this.redis.ping();
+                    console.log(`💓 [Instance #${this.instanceId}] Keepalive ping successful`);
+                } catch (error: any) {
+                    console.error(`❌ [Instance #${this.instanceId}] Keepalive ping failed:`, error.message);
+                }
+            }
+        }, 30000); // Every 30 seconds (well under 300s timeout)
+        
+        console.log(`💓 [Instance #${this.instanceId}] Keepalive started (30s interval)`);
+    }
+
+    private stopKeepalive() {
+        if (this.keepaliveInterval) {
+            clearInterval(this.keepaliveInterval);
+            this.keepaliveInterval = null;
+            console.log(`💔 [Instance #${this.instanceId}] Keepalive stopped`);
         }
     }
 
