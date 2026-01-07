@@ -98,71 +98,92 @@ export default class WalletRedis extends AbstractBase {
             password: this.password,
             sentinelPassword: this.sentinelPassword,
             
-            // Reduce aggressive retry behavior to avoid overwhelming Sentinel
+            // CRITICAL: Reduce retry aggressiveness
             sentinelRetryStrategy: (times) => {
-                // Cap retries at 10 attempts
-                if (times > 10) {
-                    console.error('Max sentinel retry attempts reached');
+                if (times > 5) {
+                    console.error(`❌ Max sentinel retry attempts (${times}) reached - stopping retries`);
                     return null; // Stop retrying
                 }
-                // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
-                const delay = Math.min(times * 1000, 30000);
-                console.log(`Sentinel retry ${times} in ${delay}ms`);
+                // Much longer backoff: 5s, 10s, 15s, 20s, 25s
+                const delay = times * 5000;
+                console.log(`⏳ Sentinel retry ${times} in ${delay}ms`);
                 return delay;
             },
             retryStrategy: (times) => {
-                // Cap retries at 10 attempts  
-                if (times > 10) {
-                    console.error('Max redis retry attempts reached');
-                    return null; // Stop retrying
+                if (times > 5) {
+                    console.error(`❌ Max redis retry attempts (${times}) reached - stopping retries`);
+                    return null;
                 }
-                // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
-                const delay = Math.min(times * 1000, 30000);
-                console.log(`Redis retry ${times} in ${delay}ms`);
+                // Much longer backoff: 5s, 10s, 15s, 20s, 25s
+                const delay = times * 5000;
+                console.log(`⏳ Redis retry ${times} in ${delay}ms`);
                 return delay;
             },
             
+            // Increase timeouts to handle network instability
+            connectTimeout: 30000, // 30 seconds instead of 10
+            commandTimeout: 10000, // 10 seconds for commands
+            
+            // Keep connections alive to detect failures faster
+            keepAlive: 10000, // Send keepalive every 10s
+            
+            // Only try to reconnect once per sentinel
+            sentinelMaxConnections: 1,
+            
+            // Don't auto-reconnect on every error - be more conservative
             enableReadyCheck: true,
-            maxRetriesPerRequest: 3,
+            autoResubscribe: false, // Disable auto-resubscribe
+            autoResendUnfulfilledCommands: false, // Don't resend automatically
             
-            // Add connection timeout
-            connectTimeout: 10000,
+            // Add reconnection backoff
+            reconnectOnError: (err) => {
+                console.error('🔴 Redis error, evaluating reconnect:', err.message);
+                // Only reconnect on specific errors
+                const targetError = 'READONLY';
+                if (err.message.includes(targetError)) {
+                    return true; // Reconnect
+                }
+                return false; // Don't reconnect on other errors
+            },
             
-            // Reduce the number of commands sent to Sentinel
-            sentinelMaxConnections: 3,
-            
-            // Enable auto-reconnect but with less aggressive behavior
-            autoResubscribe: true,
-            autoResendUnfulfilledCommands: true,
-            
-            // Add keep-alive to maintain stable connections
-            keepAlive: 30000,
-            
-            // Prevent connection pool exhaustion
             lazyConnect: false,
         });
 
-        // Event listeners
+        // Event listeners with more detailed logging
         this.redis.on('connect', () => {
-            console.log('Connected to Redis');
+            console.log(`✅ [Instance #${this.instanceId}] Connected to Redis`);
         });
 
         this.redis.on('ready', () => {
-            console.log('Redis connection ready');
+            console.log(`🟢 [Instance #${this.instanceId}] Redis connection ready`);
         });
 
         this.redis.on('error', (err) => {
-            console.error('Redis connection error:', err);
-            console.error('Error name:', err.name);
-            console.error('Error message:', err.message);
+            console.error(`❌ [Instance #${this.instanceId}] Redis error:`, err.message);
+        });
+
+        this.redis.on('close', () => {
+            console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
+        });
+
+        this.redis.on('reconnecting', (delay) => {
+            console.warn(`🔄 [Instance #${this.instanceId}] Redis reconnecting in ${delay}ms`);
+        });
+
+        this.redis.on('end', () => {
+            console.warn(`🛑 [Instance #${this.instanceId}] Redis connection ended`);
         });
 
         this.redis.on('+switch-master', (data) => {
-            console.log('Redis master switched:', data);
+            console.log(`🔀 [Instance #${this.instanceId}] Redis master switched:`, data);
         });
         
         this.redis.on('+sentinel', (data) => {
-            console.log('Sentinel event:', data);
+            console.log(`👁️  [Instance #${this.instanceId}] Sentinel event:`, data);
+        });
+
+        this.redis.on('-sentinel', (data) => {
+            console.warn(`⚠️  [Instance #${this.instanceId}] Sentinel down:`, data);
         });
 
         // Wait for connection to be ready
