@@ -6,9 +6,6 @@ RUN apt-get update && \
     apt-get install -y curl --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system --gid 1001 ops
-RUN adduser --system --uid 1001 ops
-
 # Set the working directory
 WORKDIR /app
 
@@ -22,9 +19,9 @@ RUN npm run build
 
 COPY services/explorer ./explorer/
 
+RUN cd explorer/ && npm install
+
 WORKDIR /app/explorer
-RUN chown -R ops:ops /app
-USER ops
 
 RUN npm i
 RUN npm run build
