@@ -1,7 +1,7 @@
 import express from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,23 +12,40 @@ const GATEKEEPER_URL = process.env.GATEKEEPER_URL || 'http://gatekeeper-clusteri
 
 console.log(`Gatekeeper URL: ${GATEKEEPER_URL}`);
 
-// Proxy API requests to gatekeeper
-app.use('/api', createProxyMiddleware({
-  target: GATEKEEPER_URL,
-  changeOrigin: true,
-  pathRewrite: (path, req) => {
-    // Remove /api prefix
-    return path.replace(/^\/api/, '');
-  },
-  onProxyReq: (proxyReq, req, res) => {
-    console.log(`[PROXY] ${req.method} ${req.url} -> ${GATEKEEPER_URL}${req.url.replace('/api', '')}`);
-  },
-  onError: (err, req, res) => {
-    console.error('Proxy error:', err);
-    res.status(500).json({ error: 'Proxy error', message: err.message });
-  },
-  logLevel: 'debug'
-}));
+// Parse JSON bodies
+app.use(express.json());
+
+// Manual proxy for /api routes
+app.all('/api/*', async (req, res) => {
+  const apiPath = req.path.replace(/^\/api/, '');
+  const targetUrl = `${GATEKEEPER_URL}${apiPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
+  
+  console.log(`[PROXY] ${req.method} ${req.path} -> ${targetUrl}`);
+
+  try {
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
+      data: req.body,
+      headers: {
+        ...req.headers,
+        host: new URL(GATEKEEPER_URL).host,
+      },
+      validateStatus: () => true, // Don't throw on any status code
+    });
+
+    // Forward status and headers
+    res.status(response.status);
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    
+    res.send(response.data);
+  } catch (error) {
+    console.error('Proxy error:', error.message);
+    res.status(500).json({ error: 'Proxy error', message: error.message });
+  }
+});
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'dist')));
