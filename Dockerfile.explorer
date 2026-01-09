@@ -27,7 +27,7 @@ RUN npm ci
 
 # Set build-time environment variables
 ARG VITE_EXPLORER_PORT=4000
-ARG VITE_GATEKEEPER_URL=http://gatekeeper-clusterip.development.svc.cluster.local:4224
+ARG VITE_GATEKEEPER_URL=https://dev.gatekeeper.selfid.com
 ARG VITE_OPERATION_NETWORKS=hyperswarm,TFTC,TBTC,Signet
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
 ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
