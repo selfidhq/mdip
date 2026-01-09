@@ -12,10 +12,13 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/ ./packages/
 
-# Install root dependencies
+# Install root dependencies (this installs all workspace dependencies)
 RUN npm ci
 
-# Copy explorer service
+# BUILD THE WORKSPACE PACKAGES FIRST
+RUN npm run build
+
+# Now copy explorer service
 COPY services/explorer ./services/explorer/
 
 # Install explorer dependencies and build
