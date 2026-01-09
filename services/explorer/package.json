@@ -5,7 +5,8 @@
   "scripts": {
     "start": "npm run build && node server.js",
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "serve": "node server.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -16,6 +17,7 @@
     "axios": "^1.9.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.30.0"

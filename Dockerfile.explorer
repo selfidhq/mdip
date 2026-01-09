@@ -12,35 +12,29 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/ ./packages/
 
-# Install root dependencies (this installs all workspace dependencies)
+# Install root dependencies
 RUN npm ci
 
-# BUILD THE WORKSPACE PACKAGES FIRST
+# Build workspace packages
 RUN npm run build
 
-# Now copy explorer service
+# Copy explorer service
 COPY services/explorer ./services/explorer/
 
-# Install explorer dependencies
+# Install explorer dependencies and build
 WORKDIR /app/services/explorer
+
+# Set VITE env to use relative API path
+ENV VITE_GATEKEEPER_URL=/api
+
 RUN npm ci
-
-# Set build-time environment variables
-ARG VITE_EXPLORER_PORT=4000
-ARG VITE_GATEKEEPER_URL=https://dev.gatekeeper.selfid.com
-ARG VITE_OPERATION_NETWORKS=hyperswarm,TFTC,TBTC,Signet
-ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
-ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
-ENV VITE_OPERATION_NETWORKS=${VITE_OPERATION_NETWORKS}
-
-# Build with environment variables
 RUN npm run build
 
-# Install a static file server
-RUN npm install -g serve
+# Install express for serving
+RUN npm install express http-proxy-middleware
 
-# Expose port (can be overridden)
+# Expose port
 EXPOSE 4000
 
-# Serve the built static files
-CMD ["serve", "-s", "dist", "-l", "4000"]
+# Run the server
+CMD ["node", "server.js"]
