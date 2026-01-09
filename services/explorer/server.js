@@ -20,8 +20,8 @@ console.log(`Gatekeeper URL: ${GATEKEEPER_URL}`);
 // Parse JSON bodies
 app.use(express.json());
 
-// Manual proxy for /api routes
-app.all('/api/*', async (req, res) => {
+// Manual proxy for /api routes - use regex instead of wildcard
+app.use(/^\/api\/.*/, async (req, res) => {
   const apiPath = req.path.replace(/^\/api/, '');
   const targetUrl = `${GATEKEEPER_URL}${apiPath}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`;
   
@@ -36,10 +36,9 @@ app.all('/api/*', async (req, res) => {
         ...req.headers,
         host: new URL(GATEKEEPER_URL).host,
       },
-      validateStatus: () => true, // Don't throw on any status code
+      validateStatus: () => true,
     });
 
-    // Forward status and headers
     res.status(response.status);
     Object.entries(response.headers).forEach(([key, value]) => {
       res.setHeader(key, value);
