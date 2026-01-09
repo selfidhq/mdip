@@ -16,8 +16,9 @@ console.log(`Gatekeeper URL: ${GATEKEEPER_URL}`);
 app.use('/api', createProxyMiddleware({
   target: GATEKEEPER_URL,
   changeOrigin: true,
-  pathRewrite: {
-    '^/api': '',
+  pathRewrite: (path, req) => {
+    // Remove /api prefix
+    return path.replace(/^\/api/, '');
   },
   onProxyReq: (proxyReq, req, res) => {
     console.log(`[PROXY] ${req.method} ${req.url} -> ${GATEKEEPER_URL}${req.url.replace('/api', '')}`);
