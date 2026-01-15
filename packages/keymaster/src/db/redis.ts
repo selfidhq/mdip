@@ -11,7 +11,7 @@ export default class WalletRedis extends AbstractBase {
     private readonly sentinelPort: number;
     private readonly sentinelHosts: Array<{host: string, port: number}>;
     private readonly password?: string;
-    private readonly sentinelPassword?: string;
+    //private readonly sentinelPassword?: string;
     private redis: Redis | null = null;
     private readonly instanceId: number;
     private keepaliveInterval: NodeJS.Timeout | null = null;
@@ -50,21 +50,21 @@ export default class WalletRedis extends AbstractBase {
         const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
-        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
+        //const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
         console.log('Master Name:', masterName);
         console.log('Redis Password exists:', !!password);
-        console.log('Sentinel Password exists:', !!sentinelPassword);
+        //console.log('Sentinel Password exists:', !!sentinelPassword);
         console.log('=================================');
         
         this.walletKey = walletKey;
         this.masterName = masterName;
         this.sentinelPort = sentinelPort;
         this.password = password;
-        this.sentinelPassword = sentinelPassword;
+        //this.sentinelPassword = sentinelPassword;
         this.sentinelHosts = [
             { host: sentinelHost0!, port: sentinelPort },
             { host: sentinelHost1!, port: sentinelPort },
@@ -98,7 +98,7 @@ export default class WalletRedis extends AbstractBase {
             sentinels: this.sentinelHosts,
             name: this.masterName,
             password: this.password,
-            sentinelPassword: this.sentinelPassword,
+            //sentinelPassword: this.sentinelPassword,
             
             // CRITICAL: Only connect to master, never to replicas
             role: 'master',
