@@ -30,9 +30,7 @@ const READ_ONLY = config.exportInterval === 0;
 
 const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
-    username: config.user,
-    password: config.pass,
-    host: `http://${config.host}:${config.port}`,
+    host: `${config.host}`,
     ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 const inscription = new Inscription({
