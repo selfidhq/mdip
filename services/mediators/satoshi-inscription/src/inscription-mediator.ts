@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis'
-import { MediatorDb } from '../types.js';
-import AbstractDB from "./abstract-db.js";
+import { MediatorDb } from './types.js';
+import AbstractDB from "./db/abstract-db.js";
 
 export default class JsonRedis extends AbstractDB {
     private readonly dbKey: string;
