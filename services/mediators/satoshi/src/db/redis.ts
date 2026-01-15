@@ -24,13 +24,13 @@ export default class JsonRedis extends AbstractDB {
         const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
-        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
+        //const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug (JsonRedis) ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
         console.log('Redis Password exists:', !!password);
-        console.log('Sentinel Password exists:', !!sentinelPassword);
+        //console.log('Sentinel Password exists:', !!sentinelPassword);
         console.log('=============================================');
         
         this.dbKey = `sat-mediator/${registry}`;
@@ -45,7 +45,7 @@ export default class JsonRedis extends AbstractDB {
             ],
             name: masterName,
             password: password,
-            sentinelPassword: sentinelPassword,
+            //sentinelPassword: sentinelPassword,
             sentinelRetryStrategy: (times) => {
                 // Retry connection to Sentinel
                 const delay = Math.min(times * 50, 2000);
