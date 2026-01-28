@@ -1,0 +1,2 @@
+# Use the official base image
+FROM ipfs/ipfs-cluster:v1.1.5
