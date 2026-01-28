@@ -1,0 +1,2 @@
+# Use the official base image
+FROM ipfs/kubo:v0.35.0
