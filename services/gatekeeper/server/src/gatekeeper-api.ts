@@ -65,11 +65,7 @@ app.use(cors());
 app.options('*', cors());
 
 app.use(morgan('dev'));
-<<<<<<< HEAD
 app.use(express.json({ limit: '100mb' })); // Sets the JSON payload limit to 100MB
-=======
-app.use(express.json({ limit: config.jsonLimit }));
->>>>>>> other-repo/bush/cluster-client
 
 // Define __dirname in ES module scope
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
