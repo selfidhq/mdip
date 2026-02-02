@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import BtcClient, {Block, BlockVerbose, BlockHeader, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
@@ -22,11 +21,9 @@ import {
     InscribedKey,
     BlockVerbosity,
 } from './types.js';
-=======
 import { Redis } from 'ioredis'
 import { MediatorDb } from '../types.js';
 import AbstractDB from "./abstract-db.js";
->>>>>>> 88031a5 (chore: update mediator db connections)
 
 export default class JsonRedis extends AbstractDB {
     private readonly dbKey: string;
@@ -52,7 +49,6 @@ export default class JsonRedis extends AbstractDB {
         const password = process.env.KC_REDIS_PASSWORD;
         const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
-<<<<<<< HEAD
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
 
@@ -208,7 +204,6 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             if (chunkBufs.length) {
                 slices[vinIdx] = Buffer.concat(chunkBufs);
             }
-=======
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug (JsonRedis) ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
@@ -242,7 +237,6 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             // Automatically reconnect on failover
             enableReadyCheck: true,
             maxRetriesPerRequest: 3,
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
 
         // Event listeners for monitoring
@@ -250,7 +244,6 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             console.log('JsonRedis: Connected to Redis');
         });
 
-<<<<<<< HEAD
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
         const blockHash = await btcClient.getBlockHash(height);
@@ -278,10 +271,8 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             db.txnsScanned += block.tx.length;
             db.blockCount = blockCount;
             db.blocksPending = blockCount - height;
-=======
         this.redis.on('ready', () => {
             console.log('JsonRedis: Redis connection ready');
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
 
         this.redis.on('error', (err) => {
@@ -290,7 +281,6 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             console.error('Error message:', err.message);
         });
 
-<<<<<<< HEAD
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
 
@@ -364,14 +354,12 @@ async function importBatches(): Promise<boolean> {
             if (idx >= 0) {
                 list[idx] = update;
             }
-=======
         this.redis.on('+switch-master', (data) => {
             console.log('JsonRedis: Redis master switched:', data);
         });
         
         this.redis.on('+sentinel', (data) => {
             console.log('JsonRedis: Sentinel event:', data);
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
     }
 
