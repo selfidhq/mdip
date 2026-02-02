@@ -57,7 +57,7 @@ export default class WalletRedis extends AbstractBase {
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
         console.log('Master Name:', masterName);
         console.log('Redis Password exists:', !!password);
-        //console.log('Sentinel Password exists:', !!sentinelPassword);
+        //console.log('Sentinel Password exists:', !sentinelPassword);
         console.log('=================================');
         
         this.walletKey = walletKey;
@@ -99,9 +99,6 @@ export default class WalletRedis extends AbstractBase {
             name: this.masterName,
             password: this.password,
             //sentinelPassword: this.sentinelPassword,
-            
-            // CRITICAL: Only connect to master, never to replicas
-            role: 'master',
             sentinelRetryStrategy: (times) => {
                 if (times > 5) {
                     console.error(`❌ Max sentinel retry attempts (${times}) reached - stopping retries`);
