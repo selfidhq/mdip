@@ -72,9 +72,7 @@ const READ_ONLY = config.exportInterval === 0;
 
 const gatekeeper = new GatekeeperClient();
 const btcClient = new BtcClient({
-    username: config.user,
-    password: config.pass,
-    host: `http://${config.host}:${config.port}`,
+    host: `${config.host}`,
     ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 const inscription = new Inscription({
@@ -922,6 +920,45 @@ async function checkPendingTransactions(): Promise<boolean> {
         } else {
             console.log('pendingTaproot commitTxid', db.pendingTaproot.commitTxid);
         }
+    });
+
+    console.log(`Reveal TXID: ${newRevealTxid}`);
+
+    return true;
+}
+
+async function checkExportInterval(): Promise<boolean> {
+    const db = await loadDb();
+
+    if (!db.lastExport) {
+        await jsonPersister.updateDb((data) => {
+            if (!data.lastExport) {
+                data.lastExport = new Date().toISOString();
+            }
+        });
+        return true;
+    }
+
+    const lastExport = new Date(db.lastExport).getTime();
+    const now = Date.now();
+    const elapsedMinutes = (now - lastExport) / (60 * 1000);
+
+    return (elapsedMinutes < config.exportInterval);
+}
+
+async function fundWalletMessage() {
+    const walletInfo = await btcClient.getWalletInfo();
+
+    if (walletInfo.balance < config.feeMax) {
+        const address = await btcClient.getNewAddress('funds', 'bech32m');
+        console.log(`Wallet has insufficient funds (${walletInfo.balance}). Send ${config.chain} to ${address}`);
+    }
+}
+
+async function anchorBatch(): Promise<void> {
+
+    if (await checkExportInterval()) {
+        return;
     }
 
     if (db.pendingTaproot.revealTxids?.length) {
@@ -934,7 +971,54 @@ async function checkPendingTransactions(): Promise<boolean> {
         } else {
             console.log('pendingTaproot revealTxid', db.pendingTaproot.revealTxids.at(-1));
         }
+    } catch (err) {
+        console.error(`Taproot anchor error: ${err}`);
     }
+}
+
+async function importLoop(): Promise<void> {
+    if (importRunning) {
+        setTimeout(importLoop, config.importInterval * 60 * 1000);
+        console.log(`import loop busy, waiting ${config.importInterval} minute(s)...`);
+        return;
+    }
+
+    importRunning = true;
+
+    try {
+        await scanBlocks();
+        await importBatches();
+    } catch (error: any) {
+        console.error(`Error in importLoop: ${error.error || JSON.stringify(error)}`);
+    } finally {
+        importRunning = false;
+        console.log(`import loop waiting ${config.importInterval} minute(s)...`);
+        setTimeout(importLoop, config.importInterval * 60 * 1000);
+    }
+}
+
+async function exportLoop(): Promise<void> {
+    if (exportRunning) {
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+        console.log(`Export loop busy, waiting ${config.exportInterval} minute(s)...`);
+        return;
+    }
+
+    exportRunning = true;
+
+    try {
+        await anchorBatch();
+    } catch (error) {
+        console.error(`Error in exportLoop: ${error}`);
+    } finally {
+        exportRunning = false;
+        console.log(`export loop waiting ${config.exportInterval} minute(s)...`);
+        setTimeout(exportLoop, config.exportInterval * 60 * 1000);
+    }
+}
+
+async function waitForChain() {
+    let isReady = false;
 
     return true;
 }
