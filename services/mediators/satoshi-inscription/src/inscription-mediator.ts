@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 import BtcClient, {Block, BlockVerbose, BlockHeader, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
@@ -27,12 +28,17 @@ import {
 =======
 <<<<<<< HEAD
 >>>>>>> 892a558 (chore: update mediator db connections)
+=======
+<<<<<<< HEAD
+>>>>>>> e627ada (chore: bump gatekeeper payload limit to 25 mb)
 import { Redis } from 'ioredis'
 import { MediatorDb } from '../types.js';
 import AbstractDB from "./abstract-db.js";
 =======
 <<<<<<< HEAD
 >>>>>>> c1fcc69 (chore: update mediator db connections)
+=======
+>>>>>>> 95d2400 (chore: bump gatekeeper payload limit to 25 mb)
 import BtcClient, {Block, BlockVerbose, BlockHeader, BlockTxVerbose} from 'bitcoin-core';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as ecc from 'tiny-secp256k1';
@@ -46,6 +52,9 @@ import JsonSQLite from './db/sqlite.js';
 import config from './config.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import Inscription from '@mdip/inscription';
+import { Redis } from 'ioredis'
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 import {
     AccountKeys,
     MediatorDb,
@@ -56,11 +65,6 @@ import {
     InscribedKey,
     BlockVerbosity,
 } from './types.js';
-=======
-import { Redis } from 'ioredis'
-import { MediatorDb } from '../types.js';
-import AbstractDB from "./abstract-db.js";
->>>>>>> 88031a5 (chore: update mediator db connections)
 
 export default class JsonRedis extends AbstractDB {
     private readonly dbKey: string;
@@ -88,6 +92,7 @@ const log = childLogger({ service: 'satoshi-inscription-mediator' });
         const password = process.env.KC_REDIS_PASSWORD;
         const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
@@ -247,6 +252,9 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
 =======
 <<<<<<< HEAD
 >>>>>>> 892a558 (chore: update mediator db connections)
+=======
+<<<<<<< HEAD
+>>>>>>> e627ada (chore: bump gatekeeper payload limit to 25 mb)
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug (JsonRedis) ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
@@ -283,6 +291,8 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
 =======
 <<<<<<< HEAD
 >>>>>>> c1fcc69 (chore: update mediator db connections)
+=======
+>>>>>>> 95d2400 (chore: bump gatekeeper payload limit to 25 mb)
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
 
@@ -438,7 +448,6 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             if (chunkBufs.length) {
                 slices[vinIdx] = Buffer.concat(chunkBufs);
             }
-=======
         // DETAILED LOGGING
         console.log('=== Sentinel Connection Debug (JsonRedis) ===');
         console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
@@ -472,7 +481,6 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             // Automatically reconnect on failover
             enableReadyCheck: true,
             maxRetriesPerRequest: 3,
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
 
         const orderedSlices = slices.filter(Boolean);
@@ -544,6 +552,7 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             console.log('JsonRedis: Connected to Redis');
         });
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
@@ -574,10 +583,15 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             db.blocksPending = blockCount - height;
 =======
 >>>>>>> 892a558 (chore: update mediator db connections)
+=======
+>>>>>>> e627ada (chore: bump gatekeeper payload limit to 25 mb)
         this.redis.on('ready', () => {
             console.log('JsonRedis: Redis connection ready');
             
  (chore: update mediator db connections)
+=======
+
+>>>>>>> 95d2400 (chore: bump gatekeeper payload limit to 25 mb)
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
         const blockHash = await btcClient.getBlockHash(height);
@@ -605,10 +619,8 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             db.txnsScanned += block.tx.length;
             db.blockCount = blockCount;
             db.blocksPending = blockCount - height;
-=======
         this.redis.on('ready', () => {
             console.log('JsonRedis: Redis connection ready');
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
 
     } catch (error) {
@@ -621,6 +633,7 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             console.error('Error message:', err.message);
         });
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
@@ -698,6 +711,9 @@ async function importBatches(): Promise<boolean> {
 =======
 <<<<<<< HEAD
 >>>>>>> 892a558 (chore: update mediator db connections)
+=======
+<<<<<<< HEAD
+>>>>>>> e627ada (chore: bump gatekeeper payload limit to 25 mb)
         this.redis.on('+switch-master', (data) => {
             console.log('JsonRedis: Redis master switched:', data);
         });
@@ -707,6 +723,8 @@ async function importBatches(): Promise<boolean> {
 =======
 <<<<<<< HEAD
 >>>>>>> c1fcc69 (chore: update mediator db connections)
+=======
+>>>>>>> 95d2400 (chore: bump gatekeeper payload limit to 25 mb)
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
 
@@ -780,14 +798,12 @@ async function importBatches(): Promise<boolean> {
             if (idx >= 0) {
                 list[idx] = update;
             }
-=======
         this.redis.on('+switch-master', (data) => {
             console.log('JsonRedis: Redis master switched:', data);
         });
         
         this.redis.on('+sentinel', (data) => {
             console.log('JsonRedis: Sentinel event:', data);
->>>>>>> 88031a5 (chore: update mediator db connections)
         });
     }
 
