@@ -1,7 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
+import dotenv from 'dotenv';
+import { childLogger } from '@mdip/common/logger';
+
+dotenv.config();
+const log = childLogger({ service: 'explorer-server' });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,8 +91,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Explorer running on http://0.0.0.0:${PORT}`);
-  console.log(`Proxying /api requests to ${GATEKEEPER_URL}`);
-  console.log(`Proxying /search-api requests to ${SEARCH_SERVER_URL}`);
+app.listen(port, () => {
+    log.info(`Explorer running at http://localhost:${port}`);
 });
