@@ -20,9 +20,7 @@ const log = childLogger({ service: 'satoshi-mediator' });
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const btcClient = new BtcClient({
-    username: config.user,
-    password: config.pass,
-    host: `http://${config.host}:${config.port}`,
+    host: `${config.host}`,
     ...(READ_ONLY ? {} : { wallet: config.wallet }),
 });
 
