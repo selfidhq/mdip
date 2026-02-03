@@ -22,25 +22,35 @@ import {
     InscribedKey,
     BlockVerbosity,
 } from './types.js';
+import { Redis } from 'ioredis'
+import { MediatorDb } from '../types.js';
+import AbstractDB from "./abstract-db.js";
 
-const REGISTRY = config.chain + "-Inscription";
-const PROTOCOL_TAG = Buffer.from('MDIP', 'ascii');
-const SMART_FEE_MODE = "CONSERVATIVE";
+export default class JsonRedis extends AbstractDB {
+    private readonly dbKey: string;
+    private readonly masterName: string;
+    private readonly sentinelPort: number;
+    private redis: Redis | null = null;
 
 const READ_ONLY = config.exportInterval === 0;
 const log = childLogger({ service: 'satoshi-inscription-mediator' });
+    static async create(registry: string): Promise<JsonRedis> {
+        const json = new JsonRedis(registry);
+        await json.connect();
+        return json;
+    }
 
-const gatekeeper = new GatekeeperClient();
-const btcClient = new BtcClient({
-    username: config.user,
-    password: config.pass,
-    host: `http://${config.host}:${config.port}`,
-    ...(READ_ONLY ? {} : { wallet: config.wallet }),
-});
-const inscription = new Inscription({
-    feeMax: config.feeMax,
-    network: config.network,
-});
+    constructor(registry: string) {
+        super();
+        
+        // Sentinel configuration from environment variables
+        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
+        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
+        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
+        const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
+        const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
+        const password = process.env.KC_REDIS_PASSWORD;
+        const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
@@ -197,6 +207,39 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
             if (chunkBufs.length) {
                 slices[vinIdx] = Buffer.concat(chunkBufs);
             }
+        // DETAILED LOGGING
+        console.log('=== Sentinel Connection Debug (JsonRedis) ===');
+        console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
+        console.log('Redis Password exists:', !!password);
+        console.log('Sentinel Password exists:', !!sentinelPassword);
+        console.log('=============================================');
+        
+        this.dbKey = `sat-mediator/${registry}`;
+        this.masterName = masterName;
+        this.sentinelPort = sentinelPort;
+        
+        this.redis = new Redis({
+            sentinels: [
+                { host: sentinelHost0, port: sentinelPort },
+                { host: sentinelHost1, port: sentinelPort },
+                { host: sentinelHost2, port: sentinelPort }
+            ],
+            name: masterName,
+            password: password,
+            sentinelPassword: sentinelPassword,
+            sentinelRetryStrategy: (times) => {
+                // Retry connection to Sentinel
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+            },
+            retryStrategy: (times) => {
+                // Retry connection to Redis master
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+            },
+            // Automatically reconnect on failover
+            enableReadyCheck: true,
+            maxRetriesPerRequest: 3,
         });
 
         const orderedSlices = slices.filter(Boolean);
@@ -261,6 +304,10 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
         log.error({ error }, 'Error fetching txn');
     }
 }
+        // Event listeners for monitoring
+        this.redis.on('connect', () => {
+            console.log('JsonRedis: Connected to Redis');
+        });
 
 async function fetchBlock(height: number, blockCount: number): Promise<void> {
     try {
@@ -289,13 +336,19 @@ async function fetchBlock(height: number, blockCount: number): Promise<void> {
             db.txnsScanned += block.tx.length;
             db.blockCount = blockCount;
             db.blocksPending = blockCount - height;
+        this.redis.on('ready', () => {
+            console.log('JsonRedis: Redis connection ready');
         });
-        await addBlock(height, blockHash, block.time);
 
     } catch (error) {
         log.error({ error }, 'Error fetching block');
     }
 }
+        this.redis.on('error', (err) => {
+            console.error('JsonRedis: Redis connection error:', err);
+            console.error('Error name:', err.name);
+            console.error('Error message:', err.message);
+        });
 
 async function scanBlocks(): Promise<void> {
     let blockCount = await btcClient.getBlockCount();
@@ -370,158 +423,45 @@ async function importBatches(): Promise<boolean> {
             if (idx >= 0) {
                 list[idx] = update;
             }
+        this.redis.on('+switch-master', (data) => {
+            console.log('JsonRedis: Redis master switched:', data);
+        });
+        
+        this.redis.on('+sentinel', (data) => {
+            console.log('JsonRedis: Sentinel event:', data);
         });
     }
 
-    return true;
-}
-
-async function extractCommitHex(revealHex: string) {
-
-    const revealTx = bitcoin.Transaction.fromHex(revealHex);
-
-    let commitTxid: string | undefined;
-
-    for (const inp of revealTx.ins) {
-        const w = inp.witness;
-        if (!w || w.length < 3) {
-            continue;
+    // Getter that dynamically returns the current connection info
+    get url(): string {
+        if (this.redis && this.redis.options && this.redis.options.sentinels) {
+            const currentSentinel = this.redis.options.sentinels[0];
+            return `sentinel://${currentSentinel.host}:${currentSentinel.port}/${this.masterName}`;
         }
-
-        const tScript = Buffer.from(w[w.length - 2]);
-        if (!tScript.includes(PROTOCOL_TAG)) {
-            continue;
-        }
-
-        if (!commitTxid) {
-            commitTxid = inp.hash.subarray().reverse().toString('hex');
-            break;
-        }
+        return `sentinel://unknown:${this.sentinelPort}/${this.masterName}`;
     }
 
-    if (!commitTxid) {
-        throw new Error('no Taproot-inscription inputs found in reveal tx');
-    }
-
-    const wtx = await btcClient.getTransaction(commitTxid).catch(() => undefined);
-    if (wtx?.hex) {
-        return wtx.hex;
-    }
-
-    return await btcClient.getRawTransaction(commitTxid, 0) as string;
-}
-
-async function getAccountXprvsFromCore(): Promise<AccountKeys> {
-    const { descriptors } = await btcClient.listDescriptors(true);
-
-    let rootXprv: string | undefined;
-    let parsedCoin: number | undefined;
-    let parsedAccount: number | undefined;
-
-    for (const { desc } of descriptors) {
-        const xprvMatch = desc.match(/\((?:\[.*?])?([xt]prv[1-9A-HJ-NP-Za-km-z]+)(?:\/(\d+)h\/(\d+)h\/(\d+)h)?/);
-        if (!xprvMatch) {
-            continue;
-        }
-
-        rootXprv = xprvMatch[1];
-
-        if (xprvMatch[2] && xprvMatch[3] && xprvMatch[4]) {
-            parsedCoin    = parseInt(xprvMatch[3], 10);
-            parsedAccount = parseInt(xprvMatch[4], 10);
-        }
-        break;
-    }
-
-    if (!rootXprv) {
-        throw new Error('Could not locate any xprv/tprv in wallet descriptors.');
-    }
-
-    const isTestnet = ['testnet', 'signet', 'regtest'].includes(String(config.network));
-    const coin = parsedCoin ?? (isTestnet ? 1 : 0);
-    const account = parsedAccount ?? 0;
-
-    const net = bitcoin.networks[config.network];
-    const root = bip32.fromBase58(rootXprv, net);
-
-    const bip86Node = root.derivePath(`m/86'/${coin}'/${account}'`);
-    const bip84Node = root.derivePath(`m/84'/${coin}'/${account}'`);
-
-    return {
-        bip86: bip86Node.toBase58(),
-        bip84: bip84Node.toBase58(),
-    };
-}
-
-async function getUnspentOutputs() {
-    const unspentOutputs = (await btcClient.listUnspent()).sort((a, b) => a.amount - b.amount);
-
-    const utxos: FundInput[] = [];
-    for (const unspent of unspentOutputs) {
-        if (!unspent.address) {
-            continue;
-        }
-        const addrInfo = await btcClient.getAddressInfo(unspent.address);
-        if (!addrInfo.hdkeypath || !addrInfo.desc) {
-            continue;
-        }
-        if (addrInfo.desc.startsWith('wpkh(')) {
-            utxos.push({
-                type: 'p2wpkh',
-                txid: unspent.txid,
-                vout: unspent.vout,
-                amount: Math.round(unspent.amount * 1e8),
-                hdkeypath: addrInfo.hdkeypath,
-            });
-        } else if (addrInfo.desc.startsWith('tr(')) {
-            utxos.push({
-                type: 'p2tr',
-                txid: unspent.txid,
-                vout: unspent.vout,
-                amount: Math.round(unspent.amount * 1e8),
-                hdkeypath: addrInfo.hdkeypath,
+    async connect(): Promise<void> {
+        // Connection is already established in constructor
+        // Just ensure it's ready
+        if (this.redis && this.redis.status !== 'ready') {
+            await new Promise((resolve, reject) => {
+                this.redis!.once('ready', resolve);
+                this.redis!.once('error', reject);
             });
         }
     }
 
-    return utxos;
-}
-
-async function getEntryFromMempool(txids: string[]) {
-    if (!txids.length) {
-        throw new Error('RBF: empty array');
-    }
-
-    for (let i = txids.length - 1; i >= 0; i--) {
-        const txid = txids[i];
-        const entry = await btcClient.getMempoolEntry(txid).catch(() => undefined);
-        if (entry) {
-            if (entry.fees.modified >= config.feeMax) {
-                throw new Error('RBF: Pending reveal transaction already at max fee');
-            }
-            return { entry, txid };
+    async disconnect(): Promise<void> {
+        if (this.redis) {
+            await this.redis.quit();
+            this.redis = null;
         }
     }
 
-    throw new Error('RBF: Cannot find pending reveal transaction in mempool');
-}
-
-async function checkPendingTransactions(): Promise<boolean> {
-    const db = await loadDb();
-    if (!db.pendingTaproot) {
-        return false;
-    }
-
-    const isMined = async (txid: string) => {
-        const tx = await btcClient.getTransaction(txid).catch(() => undefined);
-        return !!(tx && tx.blockhash);
-    };
-
-    const checkPendingTxs = async (txids: string[]) => {
-        for (let i = 0; i < txids.length; i++) {
-            if (await isMined(txids[i])) {
-                return i;
-            }
+    async saveDb(data: MediatorDb): Promise<boolean> {
+        if (!this.redis) {
+            throw new Error('Redis is not connected. Call connect() first or use JsonRedis.create().');
         }
         return -1;
     }
@@ -600,8 +540,15 @@ async function replaceByFee(): Promise<boolean> {
         if (db.pendingTaproot?.revealTxids?.length) {
             db.pendingTaproot.revealTxids.push(newRevealTxid);
             db.blockCount = blockCount;
+        await this.redis.set(this.dbKey, JSON.stringify(data));
+        return true;
+    }
+
+    async loadDb(): Promise<MediatorDb | null> {
+        if (!this.redis) {
+            throw new Error('Redis is not connected. Call connect() first or use JsonRedis.create().');
         }
-    });
+        const data = await this.redis.get(this.dbKey);
 
     log.info(`Reveal TXID: ${newRevealTxid}`);
 
@@ -763,11 +710,11 @@ async function waitForChain() {
             isReady = true;
         } catch (error) {
             log.debug(`Waiting for ${config.chain} node...`);
+        if (!data) {
+            return null;
         }
 
-        if (!isReady) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+        return JSON.parse(data) as MediatorDb;
     }
 
     if (READ_ONLY) {
@@ -900,3 +847,4 @@ async function main() {
 }
 
 main();
+}
