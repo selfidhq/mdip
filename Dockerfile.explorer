@@ -31,7 +31,7 @@ RUN npm ci
 RUN npm run build
 
 # Install express for serving
-RUN npm install express http-proxy-middleware
+RUN npm install express
 
 # Expose port
 EXPOSE 4000
