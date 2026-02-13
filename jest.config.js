@@ -53,11 +53,6 @@ const config = {
     ],
     coveragePathIgnorePatterns: [
         "/node_modules/",
-        "/tests/",
-        "/packages/gatekeeper/src/db/mongo\\.ts$",
-        "/packages/gatekeeper/src/db/postgres\\.ts$",
-        "/packages/gatekeeper/src/db/redis\\.ts$",
-        "/packages/gatekeeper/src/db/sqlite\\.ts$",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };

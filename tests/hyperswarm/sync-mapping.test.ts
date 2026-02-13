@@ -1,7 +1,5 @@
 import { Operation } from '@mdip/gatekeeper/types';
-import { jest } from '@jest/globals';
 import {
-    MDIP_EPOCH_SECONDS,
     SYNC_ID_BYTES_LEN,
     mapOperationToSyncKey,
     type SyncMappingErrorCode,
@@ -37,35 +35,8 @@ describe('sync-mapping', () => {
         if (result.ok) {
             expect(result.value.idHex).toBe(h('a'));
             expect(result.value.idBytes.length).toBe(SYNC_ID_BYTES_LEN);
-            expect(result.value.ts).toBe(Math.floor(Date.parse('2026-02-13T00:00:00.000Z') / 1000));
+            expect(result.value.tsMs).toBe(Date.parse('2026-02-13T00:00:00.000Z'));
             expect(result.value.operation).toBe(op);
-        }
-    });
-
-    it('truncates signed timestamps to epoch seconds for sync keys', () => {
-        const op = makeOp({ signed: '2026-02-13T00:00:00.123Z' });
-        const result = mapOperationToSyncKey(op);
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-            expect(result.value.ts).toBe(Math.floor(Date.parse('2026-02-13T00:00:00.123Z') / 1000));
-        }
-    });
-
-    it('clamps unix epoch signed timestamp to MDIP epoch', () => {
-        const op = makeOp({ signed: '1970-01-01T00:00:00.000Z' });
-        const result = mapOperationToSyncKey(op);
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-            expect(result.value.ts).toBe(MDIP_EPOCH_SECONDS);
-        }
-    });
-
-    it('clamps pre-MDIP signed timestamps to MDIP epoch', () => {
-        const op = makeOp({ signed: '1971-01-01T00:00:00.000Z' });
-        const result = mapOperationToSyncKey(op);
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-            expect(result.value.ts).toBe(MDIP_EPOCH_SECONDS);
         }
     });
 
@@ -85,29 +56,6 @@ describe('sync-mapping', () => {
         expectFailure(makeOp({ hash: 'xyz' }), 'invalid_signature_hash_format');
     });
 
-    it('rejects hash values that do not decode to 32 bytes', () => {
-        const op = makeOp();
-        const originalFrom = Buffer.from;
-        const bufferFromSpy = jest.spyOn(Buffer, 'from').mockImplementation(((...args: unknown[]) => {
-            if (args[0] === op.signature?.hash && args[1] === 'hex') {
-                return Buffer.alloc(SYNC_ID_BYTES_LEN - 1);
-            }
-
-            return originalFrom(...args as Parameters<typeof Buffer.from>);
-        }) as typeof Buffer.from);
-        try {
-            const result = mapOperationToSyncKey(op);
-
-            expect(result.ok).toBe(false);
-            if (!result.ok) {
-                expect(result.code).toBe('invalid_signature_hash_format');
-                expect(result.reason).toBe(`operation.signature.hash must decode to ${SYNC_ID_BYTES_LEN} bytes`);
-            }
-        } finally {
-            bufferFromSpy.mockRestore();
-        }
-    });
-
     it('rejects missing signature signed', () => {
         expectFailure(makeOp({ signed: '' }), 'missing_signature_signed');
     });
@@ -120,3 +68,4 @@ describe('sync-mapping', () => {
         expectFailure(makeOp({ signed: 'not-a-date' }), 'invalid_signature_signed_value');
     });
 });
+
