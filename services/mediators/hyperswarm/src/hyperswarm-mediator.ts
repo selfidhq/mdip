@@ -886,6 +886,7 @@ function shouldAdvanceToOlderWindow(session: PeerSyncSession): boolean {
 
 async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
     if (!negentropyAdapter) {
+        // eslint-disable-next-line sonarjs/no-duplicate-string
         throw new Error('negentropy adapter unavailable');
     }
 
