@@ -4,7 +4,7 @@ The Hyperswarm mediator is responsible for distributing unconfirmed MDIP operati
 
 The mediator supports two synchronization modes:
 
-- `negentropy` mode (preferred): full-history windowed sync on connect, with periodic retry only until the peer reaches a completed sync, using `neg_open`/`neg_msg`/`ops_req`/`ops_push`/`neg_close`.
+- `negentropy` mode (preferred): connect-time catch-up and periodic anti-entropy repair using `neg_open`/`neg_msg`/`ops_req`/`ops_push`/`neg_close`.
 - `legacy` mode (compatibility): classic `sync` -> full-history `batch` transfer (`shareDb`).
 
 Realtime propagation is always handled by the Gatekeeper queue gossip path:
@@ -12,13 +12,13 @@ Realtime propagation is always handled by the Gatekeeper queue gossip path:
 - relays queue operations with a `queue` message
 - peers import and further relay `queue` messages
 
-This keeps low latency for new operations while negentropy handles catch-up.
+This keeps low latency for new operations while negentropy handles catch-up/repair.
 
 ## Sync mode behavior
 
 | peer mode | connect-time behavior | periodic behavior | queue gossip |
 | --- | --- | --- | --- |
-| `negentropy` | negotiate + run full-history windowed session | periodic retry until sync completes, then stop | enabled |
+| `negentropy` | negotiate + run negentropy session | periodic anti-entropy repair sessions | enabled |
 | `legacy` | `sync` + `shareDb` full-history export | n/a | enabled |
 
 `shareDb` is intentionally retained for backward compatibility and can be disabled once compatibility validation is complete.
@@ -45,17 +45,16 @@ The mediator emits periodic structured sync metrics in `connectionLoop` includin
 | `KC_NODE_ID       `       | (no default)                 | Keymaster node agent name     |
 | `KC_NODE_NAME`            | anon                         | Human-readable name for the node |
 | `KC_MDIP_PROTOCOL`        | /MDIP/v1.0-public            | MDIP network topic to join    |
-| `KC_HYPR_DB`              | sqlite                       | Sync-store backend (`sqlite` or `postgres`) |
-| `KC_HYPR_POSTGRES_URL`    | postgresql://mdip:mdip@localhost:5432/mdip | Postgres DSN used when `KC_HYPR_DB=postgres` |
 | `KC_HYPR_EXPORT_INTERVAL` | 2                            | Seconds between export cycles |
-| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit in KB (0 or >= 4) |
+| `KC_HYPR_NEGENTROPY_FRAME_SIZE_LIMIT` | 0                            | Negentropy frame-size limit (0 or >= 4096) |
+| `KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS` | 7                            | First reconciliation window size in days (recent-first) |
+| `KC_HYPR_NEGENTROPY_OLDER_WINDOW_DAYS` | 30                           | Older reconciliation window size in days |
 | `KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW` | 25000                        | Maximum operations loaded into a single window adapter |
 | `KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION` | 64                           | Maximum negentropy rounds per window session |
-| `KC_HYPR_NEGENTROPY_INTERVAL` | 300                          | Seconds between retry attempts for peers not yet fully synced |
+| `KC_HYPR_NEGENTROPY_REPAIR_INTERVAL_SECONDS` | 300                          | Seconds between periodic negentropy repair attempts per peer |
+| `KC_HYPR_NEGENTROPY_MAX_CONCURRENT_SESSIONS` | 1                            | Maximum concurrent negentropy sessions on this node |
 | `KC_HYPR_LEGACY_SYNC_ENABLE` | true                         | Allow legacy `sync`/`shareDb` compatibility path |
 | `KC_LOG_LEVEL`            | info                         | Log level: `debug`, `info`, `warn`, `error` |
-
-Negentropy session concurrency is currently fixed at one active session per node.
 
 ## IPFS disabled mode
 
@@ -68,9 +67,6 @@ Set `KC_IPFS_ENABLE=false` to run the mediator without IPFS or Keymaster integra
 
 The mediator now includes a sync-store abstraction in `src/db/` with:
 - `SqliteOperationSyncStore` for persistent ordered storage
-- `PostgresOperationSyncStore` for persistent ordered storage
 - `InMemoryOperationSyncStore` for tests
 
-SQLite uses a fixed data path under `data/hyperswarm` (relative to the mediator working directory), with an index on `(ts, id)` to use SQLite's native B-tree ordering for range queries.
-
-Postgres uses `hyperswarm_sync_operations` with a B-tree index on `(ts, id)` to preserve the same deterministic keyset ordering required by negentropy window rebuilds and cursor pagination.
+The SQLite implementation uses a fixed data path under `data/hyperswarm` (relative to the mediator working directory), with an index on `(ts, id)` to use SQLite's native B-tree ordering for range queries.

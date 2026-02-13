@@ -1,7 +1,6 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
     NEG_SYNC_ID_RE,
-    chooseConnectSyncMode,
     chooseSyncMode,
     decodeNegentropyFrame,
     encodeNegentropyFrame,
@@ -24,8 +23,6 @@ function makeOp(hash: string): Operation {
 }
 
 describe('negentropy protocol helpers', () => {
-    const currentNegentropyVersion = 2;
-
     it('encodes and decodes utf8 frame payloads', () => {
         const payload = encodeNegentropyFrame('frame-message');
         expect(payload.encoding).toBe('utf8');
@@ -42,74 +39,16 @@ describe('negentropy protocol helpers', () => {
 
     it('normalizes peer capabilities and chooses sync mode', () => {
         const unknown = normalizePeerCapabilities();
-        expect(chooseSyncMode(unknown, currentNegentropyVersion)).toBeNull();
+        expect(chooseSyncMode(unknown, 1)).toBeNull();
 
         const legacy = normalizePeerCapabilities({ negentropy: false });
-        expect(chooseSyncMode(legacy, currentNegentropyVersion)).toBe('legacy');
+        expect(chooseSyncMode(legacy, 1)).toBe('legacy');
 
-        const negentropy = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(chooseSyncMode(negentropy, currentNegentropyVersion)).toBe('negentropy');
+        const negentropy = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
+        expect(chooseSyncMode(negentropy, 1)).toBe('negentropy');
 
-        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
-        expect(chooseSyncMode(oldVersion, currentNegentropyVersion)).toBe('legacy');
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBe('legacy');
-
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseSyncMode(newVersion, currentNegentropyVersion)).toBe('legacy');
-    });
-
-    it('chooses connect sync mode with explicit fallback reasons', () => {
-        const missing = normalizePeerCapabilities();
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'missing_capabilities',
-        });
-        expect(chooseConnectSyncMode(missing, currentNegentropyVersion, false)).toStrictEqual({
-            mode: null,
-            reason: 'legacy_disabled',
-        });
-
-        const disabled = normalizePeerCapabilities({ negentropy: false, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(disabled, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'negentropy_disabled',
-        });
-
-        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
-        expect(chooseConnectSyncMode(oldVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseConnectSyncMode(newVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
-        const supported = normalizePeerCapabilities({
-            negentropy: true,
-            negentropyVersion: currentNegentropyVersion,
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'negentropy',
-            reason: 'negentropy_supported',
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, false)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'negentropy_disabled',
-        });
+        const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 0 });
+        expect(chooseSyncMode(oldVersion, 1)).toBe('legacy');
     });
 
     it('normalizes negentropy ids and filters invalid values', () => {

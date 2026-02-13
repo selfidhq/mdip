@@ -812,7 +812,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         let merged = 0;
         let rejected = 0;
         const acceptedHashes: string[] = [];
-        const acceptedEvents: GatekeeperEvent[] = [];
 
         this.eventsQueue = [];
 
@@ -826,7 +825,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
-                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
@@ -834,7 +832,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 if (event.operation.signature?.hash) {
                     acceptedHashes.push(event.operation.signature.hash.toLowerCase());
                 }
-                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
@@ -849,7 +846,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             event = tempQueue.shift();
         }
 
-        return { added, merged, rejected, acceptedHashes, acceptedEvents };
+        return { added, merged, rejected, acceptedHashes };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -862,7 +859,6 @@ export default class Gatekeeper implements GatekeeperInterface {
         let rejected = 0;
         let done = false;
         const acceptedHashes = new Set<string>();
-        const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
 
         try {
             this.isProcessingEvents = true;
@@ -875,12 +871,6 @@ export default class Gatekeeper implements GatekeeperInterface {
                 rejected += response.rejected;
                 for (const hash of response.acceptedHashes) {
                     acceptedHashes.add(hash);
-                }
-                for (const event of response.acceptedEvents) {
-                    const hash = event.operation.signature?.hash?.toLowerCase();
-                    if (hash && !acceptedEventsByHash.has(hash)) {
-                        acceptedEventsByHash.set(hash, event);
-                    }
                 }
 
                 done = (response.added === 0 && response.merged === 0);
@@ -901,7 +891,6 @@ export default class Gatekeeper implements GatekeeperInterface {
             rejected,
             pending,
             acceptedHashes: Array.from(acceptedHashes),
-            acceptedEvents: Array.from(acceptedEventsByHash.values()),
         };
 
         const { acceptedEvents, ...logResponseBase } = response;

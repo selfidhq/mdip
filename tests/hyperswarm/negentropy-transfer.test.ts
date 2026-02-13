@@ -1,6 +1,5 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import {
-    collectNewIds,
     chunkIds,
     chunkOperationsForPush,
     estimateOperationBytes,
@@ -21,18 +20,6 @@ function makeOp(hashChar: string, sizeTag: string = ''): Operation {
 }
 
 describe('negentropy transfer batching helpers', () => {
-    it('throws on invalid chunking options', () => {
-        expect(() => chunkIds(['a'], 0)).toThrow('maxPerChunk');
-        expect(() => chunkOperationsForPush([makeOp('a')], {
-            maxOpsPerPush: 0,
-            maxBytesPerPush: 1024,
-        })).toThrow('maxOpsPerPush');
-        expect(() => chunkOperationsForPush([makeOp('a')], {
-            maxOpsPerPush: 1,
-            maxBytesPerPush: 0,
-        })).toThrow('maxBytesPerPush');
-    });
-
     it('chunks id lists with de-duplication', () => {
         const ids = ['a', 'b', 'c', 'c', 'd', 'e'];
         const chunks = chunkIds(ids, 2);
@@ -41,23 +28,6 @@ describe('negentropy transfer batching helpers', () => {
             ['c', 'd'],
             ['e'],
         ]);
-    });
-
-    it('returns empty id chunks when input ids are empty', () => {
-        expect(chunkIds([], 2)).toStrictEqual([]);
-    });
-
-    it('collects only ids not already seen in the current session', () => {
-        const seen = new Set<string>(['a', 'c']);
-
-        const fresh = collectNewIds(['a', 'b', 'b', 'c', 'd'], seen);
-
-        expect(fresh).toStrictEqual(['b', 'd']);
-        expect(Array.from(seen)).toStrictEqual(['a', 'c', 'b', 'd']);
-    });
-
-    it('returns empty from collectNewIds when input is empty', () => {
-        expect(collectNewIds([], new Set<string>())).toStrictEqual([]);
     });
 
     it('splits operations by count and bytes', () => {
@@ -89,12 +59,5 @@ describe('negentropy transfer batching helpers', () => {
         });
 
         expect(batches).toStrictEqual([[op]]);
-    });
-
-    it('returns empty when operations input is empty', () => {
-        expect(chunkOperationsForPush([], {
-            maxOpsPerPush: 10,
-            maxBytesPerPush: 1024,
-        })).toStrictEqual([]);
     });
 });
