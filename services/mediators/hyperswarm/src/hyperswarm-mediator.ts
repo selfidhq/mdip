@@ -632,7 +632,7 @@ async function maybeStartPeerSync(peerKey: string, source: 'connect' | 'periodic
     }
 
     if (mode === 'legacy') {
-        if (!shouldAcceptLegacySync(conn.syncMode, config.legacySyncEnabled)) {
+        if (!config.legacySyncEnabled) {
             return;
         }
 
