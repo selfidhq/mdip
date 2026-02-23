@@ -113,6 +113,7 @@ const config = {
     nodeName: process.env.KC_NODE_NAME || 'anon',
     protocol: process.env.KC_MDIP_PROTOCOL || '/MDIP/v1.0-public',
     exportInterval: parsePositiveIntEnv('KC_HYPR_EXPORT_INTERVAL', 2),
+    negentropyEnabled: parseBooleanEnv('KC_HYPR_NEGENTROPY_ENABLE', true),
     negentropyFrameSizeLimit: parseFrameSizeLimit(),
     negentropyRecentWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_RECENT_WINDOW_DAYS', 7),
     negentropyOlderWindowDays: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_OLDER_WINDOW_DAYS', 30),
