@@ -331,10 +331,6 @@ goodbye(async () => {
     } catch (error) {
         log.error({ error }, 'syncStore stop error');
     }
-
-    void syncStore.stop().catch(error => {
-        log.error({ error }, 'syncStore stop error');
-    });
 });
 
 async function createSwarm(): Promise<void> {
