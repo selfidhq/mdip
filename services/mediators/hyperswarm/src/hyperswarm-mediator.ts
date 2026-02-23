@@ -792,6 +792,10 @@ function buildFullHistoryWindow(): ReconciliationWindow {
     };
 }
 
+function currentSyncTimestampSec(): number {
+    return Math.floor(Date.now() / 1000);
+}
+
 function makeWindowId(window: ReconciliationWindow): string {
     return `${window.order}:${window.name}:${window.fromTs}:${window.toTs}:${window.maxRecords}`;
 }
@@ -897,7 +901,7 @@ async function planRuntimeWindows(): Promise<ReconciliationWindow[]> {
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(Date.now());
+    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSec());
     if (windows.length > 0) {
         return windows;
     }
