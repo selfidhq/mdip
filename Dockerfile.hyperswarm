@@ -1,6 +1,9 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
 
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
+
 # Install Python and other dependencies
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 
@@ -18,6 +21,8 @@ RUN npm run build
 COPY services/mediators/hyperswarm ./hyperswarm/
 WORKDIR /app/hyperswarm
 RUN npm ci && npm run build
+RUN chown -R ops:ops /app
+USER ops
 
 # Run...
 CMD ["node", "dist/hyperswarm-mediator.js"]

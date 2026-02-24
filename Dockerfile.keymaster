@@ -1,6 +1,9 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
 
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
+
 # Set the working directory
 WORKDIR /app
 
@@ -18,6 +21,8 @@ RUN cd keymaster/client && npm ci && npm run build
 RUN cd keymaster/server && npm ci && npm run build
 
 WORKDIR /app/keymaster
+RUN chown -R ops:ops /app
+USER ops
 
 # Run...
 CMD ["node", "server/dist/keymaster-api.js"]
