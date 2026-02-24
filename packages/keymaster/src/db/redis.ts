@@ -1,8 +1,7 @@
 import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
 import { Redis } from 'ioredis'
 
-export default class WalletRedis extends AbstractBase {
+export default class WalletRedis {
     private static instance: WalletRedis | null = null;
     private static instanceCount = 0;
     
@@ -37,7 +36,6 @@ export default class WalletRedis extends AbstractBase {
     }
 
     constructor(walletKey: string = 'wallet') {
-        super();
         this.instanceId = ++WalletRedis.instanceCount;
         
         console.log(`🔵 Constructing WalletRedis instance #${this.instanceId}`);
