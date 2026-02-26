@@ -24,7 +24,7 @@ import { handleCopyDID } from '../shared/utilities.js';
 import axios from "axios";
 import { useSearchParams } from "react-router-dom";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER;
+const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "VITE_SEARCH_SERVER_PLACEHOLDER";
 const VERSION = '/api/v1';
 
 function JsonViewer(
