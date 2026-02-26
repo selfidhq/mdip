@@ -27,6 +27,8 @@ interface SnackbarState {
     severity: AlertColor;
 }
 
+const gatekeeperURL = import.meta.env.VITE_GATEKEEPER_URL || "VITE_GATEKEEPER_URL_PLACEHOLDER";
+
 function App() {
     const [isReady, setIsReady] = useState<boolean>(false);
     const [readinessMessage, setReadinessMessage] = useState<string>("Waiting for Search Server...");
