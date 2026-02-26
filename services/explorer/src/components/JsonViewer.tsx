@@ -24,6 +24,9 @@ import {
 } from '../shared/utilities.js';
 import { useSearchParams } from "react-router-dom";
 
+const searchServerURL = import.meta.env.VITE_SEARCH_SERVER;
+const VERSION = '/api/v1';
+
 function JsonViewer(
     {
         setError,
