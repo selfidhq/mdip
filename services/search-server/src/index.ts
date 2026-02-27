@@ -1,8 +1,7 @@
 import express from "express";
 import cors from "cors";
+import { BlockList, isIP } from "net";
 import rateLimit from "express-rate-limit";
-import { resolveDIDFromEvents } from "@mdip/gatekeeper";
-import type { ResolveDIDOptions } from "@mdip/gatekeeper/types";
 import GatekeeperClient from "@mdip/gatekeeper/client";
 import DIDsSQLite from "./db/sqlite.js";
 import DIDsDbMemory from './db/json-memory.js';
@@ -11,18 +10,89 @@ import DidIndexer from "./DidIndexer.js";
 import {DIDsDb} from "./types.js";
 import { childLogger } from "@mdip/common/logger";
 import config from "./config.js";
-import {
-    createWhitelistBlockList,
-    getSearchStatus,
-    isRateLimitWhitelistedRequest,
-    parseNonNegativeInteger,
-    parseOptionalBoolean,
-    parseOptionalPositiveInteger,
-    rateLimitWindowUnits,
-    shouldSkipRateLimitPath,
-} from "./index-helpers.js";
 
 const log = childLogger({ service: 'search-server' });
+const rateLimitWindowUnits = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+} as const;
+
+function normalizeIp(ip: string): string {
+    const withoutZone = ip.split('%')[0];
+
+    if (withoutZone === '::1') {
+        return '127.0.0.1';
+    }
+
+    if (withoutZone.startsWith('::ffff:')) {
+        return withoutZone.slice(7);
+    }
+
+    return withoutZone;
+}
+
+function detectIpFamily(ip: string): 'ipv4' | 'ipv6' | null {
+    const version = isIP(ip);
+
+    if (version === 4) {
+        return 'ipv4';
+    }
+
+    if (version === 6) {
+        return 'ipv6';
+    }
+
+    return null;
+}
+
+function createWhitelistBlockList(whitelist: string[]): BlockList {
+    const blockList = new BlockList();
+
+    for (const entry of whitelist) {
+        const [rawAddress, rawPrefixLength] = entry.split('/');
+        const address = normalizeIp(rawAddress);
+        const family = detectIpFamily(address);
+
+        if (!family) {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+            continue;
+        }
+
+        if (rawPrefixLength !== undefined) {
+            const prefixLength = Number.parseInt(rawPrefixLength, 10);
+
+            if (!Number.isInteger(prefixLength)) {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+                continue;
+            }
+
+            try {
+                blockList.addSubnet(address, prefixLength, family);
+            }
+            catch {
+                log.warn(`Ignoring invalid rate limit CIDR entry: '${entry}'`);
+            }
+            continue;
+        }
+
+        try {
+            blockList.addAddress(address, family);
+        }
+        catch {
+            log.warn(`Ignoring invalid rate limit whitelist entry: '${entry}'`);
+        }
+    }
+
+    return blockList;
+}
+
+function shouldSkipRateLimitPath(req: express.Request, skipPaths: string[]): boolean {
+    const pathOnly = req.originalUrl.split('?')[0];
+
+    return skipPaths.some(skipPath =>
+        pathOnly === skipPath || pathOnly.startsWith(`${skipPath}/`));
+}
 
 async function main() {
     const app = express();
@@ -49,7 +119,7 @@ async function main() {
             message: { error: 'Too many requests' },
             standardHeaders: 'draft-7',
             legacyHeaders: false,
-            skip: (req: express.Request) => {
+            skip: (req) => {
                 if (req.method === 'OPTIONS') {
                     return true;
                 }
@@ -62,7 +132,19 @@ async function main() {
                     return false;
                 }
 
-                return isRateLimitWhitelistedRequest(req, whitelistBlockList);
+                const candidates = [req.ip, req.socket.remoteAddress]
+                    .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0);
+
+                for (const candidate of candidates) {
+                    const normalizedIp = normalizeIp(candidate);
+                    const family = detectIpFamily(normalizedIp);
+
+                    if (family && whitelistBlockList.check(normalizedIp, family)) {
+                        return true;
+                    }
+                }
+
+                return false;
             },
         })
         : null;
@@ -74,7 +156,6 @@ async function main() {
         log.info('Rate limiting disabled');
     }
 
-    // eslint-disable-next-line sonarjs/cors
     app.use(cors(corsOptions));
     app.use(express.json({ limit: config.jsonLimit }));
 
@@ -223,102 +304,6 @@ async function main() {
         } catch (err) {
             log.error({ error: err }, '/query error');
             res.status(500).json({ error: String(err) });
-        }
-    });
-
-    v1router.get("/metrics/schemas/published", async (req, res) => {
-        try {
-            const schemas = await didDb.getPublishedCredentialCountsBySchema();
-            res.json({ schemas });
-        } catch (error) {
-            log.error({ error }, '/metrics/schemas/published error');
-            res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get("/metrics/credentials/published", async (req, res) => {
-        try {
-            const credentialDid = req.query.credentialDid?.toString();
-            const schemaDid = req.query.schemaDid?.toString();
-            const issuerDid = req.query.issuerDid?.toString();
-            const subjectDid = req.query.subjectDid?.toString();
-            const revealed = parseOptionalBoolean(req.query.revealed);
-            const limit = parseNonNegativeInteger(req.query.limit, 50);
-            const offset = parseNonNegativeInteger(req.query.offset, 0);
-            const result = await didDb.listPublishedCredentials({
-                credentialDid,
-                schemaDid,
-                issuerDid,
-                subjectDid,
-                revealed,
-                limit,
-                offset,
-            });
-
-            res.json(result);
-        } catch (error) {
-            log.error({ error }, '/metrics/credentials/published error');
-            res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get("/metrics/challenge-receipts", async (req, res) => {
-        try {
-            const receiptDid = req.query.receiptDid?.toString();
-            const attesterDid = req.query.attesterDid?.toString();
-            const schemaDid = req.query.schemaDid?.toString();
-            const requesterDid = req.query.requesterDid?.toString();
-            const responseCommitment = req.query.responseCommitment?.toString();
-            const updatedAfter = req.query.updatedAfter?.toString();
-            const updatedBefore = req.query.updatedBefore?.toString();
-            const limit = parseNonNegativeInteger(req.query.limit, 50);
-            const offset = parseNonNegativeInteger(req.query.offset, 0);
-            const result = await didDb.listChallengeReceipts({
-                receiptDid,
-                attesterDid,
-                schemaDid,
-                requesterDid,
-                responseCommitment,
-                updatedAfter,
-                updatedBefore,
-                limit,
-                offset,
-            });
-
-            res.json(result);
-        } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts error');
-            res.status(500).json({ error: String(error) });
-        }
-    });
-
-    v1router.get("/metrics/challenge-receipts/usage", async (req, res) => {
-        try {
-            const attesterDid = req.query.attesterDid?.toString();
-            if (!attesterDid) {
-                return res.status(400).json({ error: 'attesterDid is required' });
-            }
-
-            const schemaDid = req.query.schemaDid?.toString();
-            const requesterDid = req.query.requesterDid?.toString();
-            const updatedAfter = req.query.updatedAfter?.toString();
-            const updatedBefore = req.query.updatedBefore?.toString();
-            const limit = parseNonNegativeInteger(req.query.limit, 50);
-            const offset = parseNonNegativeInteger(req.query.offset, 0);
-            const result = await didDb.getChallengeReceiptUsage({
-                attesterDid,
-                schemaDid,
-                requesterDid,
-                updatedAfter,
-                updatedBefore,
-                limit,
-                offset,
-            });
-
-            res.json(result);
-        } catch (error) {
-            log.error({ error }, '/metrics/challenge-receipts/usage error');
-            res.status(500).json({ error: String(error) });
         }
     });
 
