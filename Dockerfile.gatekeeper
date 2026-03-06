@@ -1,6 +1,7 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
 
+<<<<<<< HEAD
 # Install curl
 RUN apt-get update && \
     apt-get install -y curl --no-install-recommends && \
@@ -8,6 +9,9 @@ RUN apt-get update && \
 
 RUN addgroup --system --gid 1001 ops
 RUN adduser --system --uid 1001 ops
+=======
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+>>>>>>> upstream/bush/rate-limiter
 
 # Set the working directory
 WORKDIR /app
@@ -17,7 +21,8 @@ COPY package*.json ./
 COPY packages/ ./packages/
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --ignore-scripts
+RUN npm rebuild sqlite3
 RUN npm run build
 
 COPY services/gatekeeper ./gatekeeper/
