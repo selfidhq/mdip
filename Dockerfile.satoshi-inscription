@@ -1,12 +1,9 @@
 # Use the official Node.js as the base image
 FROM node:22.15.0-bullseye-slim
 
-<<<<<<< HEAD
 RUN addgroup --system --gid 1001 ops
 RUN adduser --system --uid 1001 ops
-=======
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
->>>>>>> upstream/bush/rate-limiter
 
 # Set the working directory
 WORKDIR /app
