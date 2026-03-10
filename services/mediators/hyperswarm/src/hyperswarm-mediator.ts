@@ -1968,10 +1968,7 @@ const networkID = Buffer.from(hash).toString('hex');
 const topic = Buffer.from(b4a.from(networkID, 'hex'));
 
 async function main(): Promise<void> {
-<<<<<<< HEAD
-=======
     log.info({ db: config.db }, 'sync-store backend selected');
->>>>>>> upstream/bush/postgres
     await syncStore.start();
 
     await gatekeeper.connect({
