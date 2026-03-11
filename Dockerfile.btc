@@ -1,0 +1,22 @@
+FROM --platform=linux/amd64 ubuntu:22.04
+RUN useradd -m -U -u 1001 -d /ops ops
+RUN \
+        apt-get update && \
+        apt-get install -y software-properties-common apt-utils \
+        git vim less python3 build-essential libtool autotools-dev \
+        automake pkg-config bsdmainutils libboost-dev libboost-system-dev \
+        libboost-filesystem-dev libboost-test-dev libboost-thread-dev \
+	      libssl-dev libevent-dev libsqlite3-dev libminiupnpc-dev libzmq3-dev
+WORKDIR /
+RUN git clone --depth 1 --branch v28.0 https://github.com/bitcoin/bitcoin.git
+WORKDIR /bitcoin
+RUN ./autogen.sh
+RUN ./configure --enable-wallet --disable-tests --disable-bench
+RUN make
+RUN make install
+RUN strip /usr/local/bin/bitcoin*
+RUN rm -rf /bitcoin
+WORKDIR /ops
+USER ops
+
+CMD ["bitcoind","-datadir=/ops/", "-printtoconsole"]
