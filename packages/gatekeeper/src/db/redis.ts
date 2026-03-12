@@ -297,7 +297,7 @@ export default class DbRedis implements GatekeeperDb {
                 .hset(heightMapKey, height.toString(), hash)
                 .set(maxHeightKey, Math.max(height, currentMaxHeight))
                 .exec();
-        } catch (error) {
+        } catch {
             return false
         }
 
@@ -332,7 +332,7 @@ export default class DbRedis implements GatekeeperDb {
             const blockInfo = await this.redis.get(blockKey);
 
             return blockInfo ? JSON.parse(blockInfo) : null;
-        } catch (error) {
+        } catch {
             return null;
         }
     }

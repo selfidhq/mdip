@@ -12,6 +12,13 @@ async function importConfigIsolated() {
 }
 
 describe('hyperswarm config', () => {
+    beforeEach(() => {
+        process.env = {
+            ...ORIGINAL_ENV,
+            KC_HYPR_DB: 'sqlite',
+        };
+    });
+
     afterEach(() => {
         process.env = { ...ORIGINAL_ENV };
         jest.resetModules();
@@ -90,11 +97,18 @@ describe('hyperswarm config', () => {
         ).rejects.toThrow('Invalid KC_HYPR_NEGENTROPY_ENABLE; expected true or false');
     });
 
-    it('defaults sync DB to sqlite when KC_HYPR_DB is empty', async () => {
+    it('throws when KC_HYPR_DB is empty or whitespace', async () => {
         process.env.KC_HYPR_DB = '';
 
-        const config = await importConfigIsolated();
-        expect(config.db).toBe('sqlite');
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
+
+        process.env.KC_HYPR_DB = '   ';
+
+        await expect(importConfigIsolated())
+            .rejects
+            .toThrow('Missing KC_HYPR_DB; expected sqlite or postgres');
     });
 
     it('accepts postgres sync DB and uses service postgres URL before shared URL', async () => {
