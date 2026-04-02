@@ -22,7 +22,14 @@ WORKDIR /app/explorer
 RUN npm i
 RUN npm run build
 
+# Fix permissions so non-root user can modify dist files at runtime
+RUN chown -R 1001:65534 /app/explorer/dist
+
+# Add entrypoint script
+COPY services/explorer/entrypoint.sh /app/explorer/entrypoint.sh
+RUN chmod +x /app/explorer/entrypoint.sh
+
 EXPOSE 4000
 
 # Run...
-CMD ["node", "server.js"]
+CMD ["/app/explorer/entrypoint.sh"]
