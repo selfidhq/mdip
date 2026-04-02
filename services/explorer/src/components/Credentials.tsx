@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
+const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "VITE_SEARCH_SERVER_PLACEHOLDER";
 const VERSION = "/api/v1";
 const pageSizeOptions = [25, 50, 100];
 const schemaPageSizeOptions = [25, 50, 100];
