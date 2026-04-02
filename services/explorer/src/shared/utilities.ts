@@ -1,7 +1,7 @@
 import { CSSProperties } from "react";
 import axios from "axios";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "http://localhost:4002";
+const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "VITE_SEARCH_SERVER_PLACEHOLDER";
 const VERSION = "/api/v1";
 
 export function getTypeStyle(type: string): CSSProperties {
