@@ -93,7 +93,7 @@ function App() {
 
         async function init() {
             await gatekeeper.connect({
-                url: gatekeeperUrl,
+                url: gatekeeperURL,
                 waitUntilReady: true,
                 intervalSeconds: 5,
                 chatty: true,
