@@ -83,12 +83,6 @@ export interface NegentropyWindowStats extends NegentropyAdapterStats {
     lastCursor: SyncStoreCursor | null;
 }
 
-export interface NegentropyWindowSnapshot {
-    window: ReconciliationWindow;
-    stats: NegentropyWindowStats;
-    storage: NegentropyStorageVectorInstance;
-}
-
 export interface NegentropySessionStats {
     windowCount: number;
     rounds: number;
@@ -113,54 +107,6 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
         ts: cursor.ts,
         id: cursor.id,
     };
-}
-
-function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
-    return {
-        ...window,
-        after: cloneCursor(window.after) ?? undefined,
-    };
-}
-
-function cloneWindowStats(stats: NegentropyWindowStats): NegentropyWindowStats {
-    return {
-        ...stats,
-        lastCursor: cloneCursor(stats.lastCursor),
-    };
-}
-
-export class NegentropyWindowEngine {
-    private readonly ne: NegentropyInstance;
-
-    constructor(
-        mod: NegentropyModule,
-        snapshot: NegentropyWindowSnapshot,
-        frameSizeLimit: number,
-        wantUint8ArrayOutput: boolean,
-    ) {
-        this.ne = new mod.Negentropy(snapshot.storage, frameSizeLimit);
-        if (wantUint8ArrayOutput) {
-            this.ne.wantUint8ArrayOutput = true;
-        }
-    }
-
-    getInstance(): NegentropyInstance {
-        return this.ne;
-    }
-
-    async initiate(): Promise<NegentropyFrameValue> {
-        return this.ne.initiate();
-    }
-
-    async reconcile(msg: NegentropyFrameValue): Promise<NegentropyReconcileResult> {
-        const [nextMsg, haveIds, needIds] = await this.ne.reconcile(msg);
-        return { nextMsg, haveIds, needIds };
-    }
-
-    async respond(msg: NegentropyFrameValue): Promise<NegentropyFrameValue | null> {
-        const result = await this.reconcile(msg);
-        return result.nextMsg;
-    }
 }
 
 export default class NegentropyAdapter {
@@ -397,7 +343,10 @@ export default class NegentropyAdapter {
 
     getLastWindowStats(): NegentropyWindowStats | null {
         return this.lastWindowStats
-            ? cloneWindowStats(this.lastWindowStats)
+            ? {
+                ...this.lastWindowStats,
+                lastCursor: cloneCursor(this.lastWindowStats.lastCursor),
+            }
             : null;
     }
 
@@ -463,6 +412,8 @@ export default class NegentropyAdapter {
                     break;
                 }
 
+                processed += 1;
+                lastCursor = cloneCursor({ ts: row.ts, id: row.id });
                 if (!isValidSyncId(row.id) || !Number.isFinite(row.ts)) {
                     skipped += 1;
                     continue;

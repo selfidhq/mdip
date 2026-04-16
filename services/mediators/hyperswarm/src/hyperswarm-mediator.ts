@@ -74,17 +74,10 @@ import {
     mapAcceptedOperationsToSyncRecords,
     sortOperationsBySyncKey,
 } from './sync-persistence.js';
-import { resolveAcceptedOperationsToPersist } from './sync-store-mirroring.js';
 import {
+    MDIP_EPOCH_SECONDS,
     mapOperationToSyncKey,
 } from './sync-mapping.js';
-import {
-    DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
-    decodeFramedMessages,
-    decodeLegacyJsonMessages,
-    encodeFramedMessage,
-    supportsLegacyRawTransportMessage,
-} from './transport-framing.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -257,10 +250,7 @@ interface PeerSyncSession {
     reconciliationComplete: boolean;
     localClosed: boolean;
     receivedPushIds: Set<string>;
-    receivedKnownPushIds: Set<string>;
     receivedPushMaxCursor: SyncStoreCursor | null;
-    remoteWindowCappedByRecords: boolean;
-    remoteWindowLastCursor: SyncStoreCursor | null;
 }
 
 interface MediatorSyncStats {
@@ -329,8 +319,6 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 const NEGENTROPY_VERSION = 2;
-const TRANSPORT_FRAMING_VERSION = 1;
-const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
@@ -654,10 +642,7 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         reconciliationComplete: false,
         localClosed: false,
         receivedPushIds: new Set<string>(),
-        receivedKnownPushIds: new Set<string>(),
         receivedPushMaxCursor: null,
-        remoteWindowCappedByRecords: false,
-        remoteWindowLastCursor: null,
     };
     peerSessions.set(peerKey, session);
     connectionInfo[peerKey].syncMode = mode;
@@ -1147,6 +1132,14 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
     };
 }
 
+function compareSyncCursor(a: SyncStoreCursor, b: SyncStoreCursor): number {
+    if (a.ts !== b.ts) {
+        return a.ts - b.ts;
+    }
+
+    return a.id.localeCompare(b.id);
+}
+
 function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
     return stats
         ? {
@@ -1156,10 +1149,14 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
         : null;
 }
 
-function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
+function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): ReconciliationWindow {
     return {
-        ...window,
-        after: cloneCursor(window.after) ?? undefined,
+        name: 'bootstrap_full_history',
+        fromTs: MDIP_EPOCH_SECONDS,
+        toTs: Number.MAX_SAFE_INTEGER,
+        maxRecords: config.negentropyMaxRecordsPerWindow,
+        order,
+        after: cloneCursor(after) ?? undefined,
     };
 }
 
@@ -1253,12 +1250,7 @@ function initializeSessionWindowState(
     session.pendingNeedIds = new Set<string>();
     session.reconciliationComplete = false;
     session.receivedPushIds = new Set<string>();
-    session.receivedKnownPushIds = new Set<string>();
     session.receivedPushMaxCursor = null;
-    session.remoteWindowCappedByRecords = false;
-    session.remoteWindowLastCursor = null;
-    session.currentWindowSnapshot = null;
-    session.currentWindowEngine = null;
     session.currentWindowStats = {
         ...windowStats,
         windowName: window.name,
@@ -1295,12 +1287,12 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const earliestTs = await negentropyAdapter.getEarliestTimestamp();
-    return buildInitialHistoryWindow(
-        earliestTs ?? MDIP_EPOCH_SECONDS,
-        currentSyncTimestampSeconds(),
-        config.negentropyMaxRecordsPerWindow,
-    );
+    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSec());
+    if (windows.length > 0) {
+        return windows;
+    }
+
+    return [buildBootstrapPageWindow()];
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
@@ -1618,34 +1610,28 @@ async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyn
     return true;
 }
 
-async function maybeSplitWindowOnRoundCap(
-    peerKey: string,
-    session: PeerSyncSession,
-    reason: 'local_max_rounds_reached' | 'remote_max_rounds_reached',
-): Promise<boolean> {
+function shouldContinueBootstrapPaging(session: PeerSyncSession): boolean {
+    const window = getSessionWindow(session);
+    if (!window || window.name !== 'bootstrap_full_history') {
+        return false;
+    }
+
+    return session.receivedPushIds.size >= window.maxRecords && !!session.receivedPushMaxCursor;
+}
+
+async function maybeContinueBootstrapPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
+    if (!shouldContinueBootstrapPaging(session)) {
+        return false;
+    }
+
     const currentWindow = getSessionWindow(session);
-    if (!currentWindow) {
+    if (!currentWindow || !session.receivedPushMaxCursor) {
         return false;
     }
 
-    const splitWindow = buildRoundCapSplitWindow(currentWindow);
-    if (!splitWindow) {
-        return false;
-    }
-
-    session.windows[session.windowIndex] = splitWindow;
-    log.debug(
-        {
-            peer: shortName(peerKey),
-            sessionId: session.sessionId,
-            reason,
-            previousWindow: windowLabel(currentWindow),
-            previousMaxRecords: currentWindow.maxRecords,
-            splitWindow: windowLabel(splitWindow),
-            splitMaxRecords: splitWindow.maxRecords,
-        },
-        'negentropy window split after round cap'
-    );
+    const nextWindow = buildBootstrapPageWindow(session.receivedPushMaxCursor, currentWindow.order + 1);
+    session.windows.push(nextWindow);
+    session.windowIndex = session.windows.length - 1;
     await startNextNegentropyWindow(peerKey, session);
     return true;
 }
@@ -1822,6 +1808,11 @@ async function reconcileNegentropyFrame(
 }
 
 function trackReceivedWindowOperations(session: PeerSyncSession, operations: Operation[]): void {
+    const window = getSessionWindow(session);
+    if (!window || window.name !== 'bootstrap_full_history') {
+        return;
+    }
+
     for (const operation of operations) {
         const mapped = mapOperationToSyncKey(operation);
         if (!mapped.ok) {
@@ -1834,47 +1825,13 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
 
         session.receivedPushIds.add(mapped.value.idHex);
         const cursor: SyncStoreCursor = {
-            ts: mapped.value.ts,
+            ts: mapped.value.tsSec,
             id: mapped.value.idHex,
         };
 
         if (!session.receivedPushMaxCursor || compareSyncCursor(cursor, session.receivedPushMaxCursor) > 0) {
             session.receivedPushMaxCursor = cursor;
         }
-    }
-}
-
-async function trackRequestedKnownOpsPush(session: PeerSyncSession, operations: Operation[]): Promise<void> {
-    if (!session.initiator || session.pendingNeedIds.size === 0 || operations.length === 0) {
-        return;
-    }
-
-    const candidateIds: string[] = [];
-
-    for (const operation of operations) {
-        const mapped = mapOperationToSyncKey(operation);
-        if (!mapped.ok || !session.pendingNeedIds.has(mapped.value.idHex)) {
-            continue;
-        }
-
-        if (session.receivedKnownPushIds.has(mapped.value.idHex)) {
-            continue;
-        }
-
-        candidateIds.push(mapped.value.idHex);
-    }
-
-    if (candidateIds.length === 0) {
-        return;
-    }
-
-    const rows = await syncStore.getByIds(candidateIds);
-    if (rows.length === 0) {
-        return;
-    }
-
-    for (const row of rows) {
-        session.receivedKnownPushIds.add(row.id);
     }
 }
 
@@ -1891,8 +1848,13 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
         return;
     }
 
-    const continued = await maybeContinueCappedWindowPaging(peerKey, session);
+    const continued = await maybeContinueBootstrapPaging(peerKey, session);
     if (continued) {
+        return;
+    }
+
+    const advanced = await maybeAdvanceToOlderWindow(peerKey, session);
+    if (advanced) {
         return;
     }
 
@@ -2669,9 +2631,7 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
         if (batch.length > 0) {
             syncStats.negentropyOpsPushReceived += batch.length;
             trackReceivedWindowOperations(session, batch);
-            await trackRequestedKnownOpsPush(session, batch);
-            const pushedIdList = extractOperationHashes(batch);
-            const pushedIds = new Set(pushedIdList);
+            const pushedIds = new Set(extractOperationHashes(batch));
             for (const id of pushedIds) {
                 session.pendingNeedIds.delete(id);
             }
