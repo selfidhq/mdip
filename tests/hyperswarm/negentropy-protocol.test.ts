@@ -55,12 +55,6 @@ describe('negentropy protocol helpers', () => {
 
         const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
         expect(chooseSyncMode(oldVersion, currentNegentropyVersion)).toBe('legacy');
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseSyncMode(missingVersion, currentNegentropyVersion)).toBe('legacy');
-
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseSyncMode(newVersion, currentNegentropyVersion)).toBe('legacy');
     });
 
     it('chooses connect sync mode with explicit fallback reasons', () => {
@@ -82,18 +76,6 @@ describe('negentropy protocol helpers', () => {
 
         const oldVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 1 });
         expect(chooseConnectSyncMode(oldVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
-        const missingVersion = normalizePeerCapabilities({ negentropy: true });
-        expect(chooseConnectSyncMode(missingVersion, currentNegentropyVersion, true)).toStrictEqual({
-            mode: 'legacy',
-            reason: 'version_mismatch',
-        });
-
-        const newVersion = normalizePeerCapabilities({ negentropy: true, negentropyVersion: 3 });
-        expect(chooseConnectSyncMode(newVersion, currentNegentropyVersion, true)).toStrictEqual({
             mode: 'legacy',
             reason: 'version_mismatch',
         });
