@@ -15,6 +15,7 @@ const MIN_FRAME_SIZE_LIMIT = 4096;
 const DEFAULT_ITERATE_LIMIT = 1000;
 const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const require = createRequire(import.meta.url);
 
 type NegentropyFrameValue = string | Uint8Array;
@@ -180,22 +181,9 @@ export default class NegentropyAdapter {
         return cloneWindowStats(snapshot.stats);
     }
 
-    async buildSnapshotForWindow(window: ReconciliationWindow): Promise<NegentropyWindowSnapshot> {
-        return this.buildWindowSnapshot(window);
-    }
-
-    createEngineForSnapshot(snapshot: NegentropyWindowSnapshot): NegentropyWindowEngine {
-        return new NegentropyWindowEngine(
-            this.mod,
-            snapshot,
-            this.frameSizeLimit,
-            this.wantUint8ArrayOutput,
-        );
-    }
-
-    getCurrentSnapshot(): NegentropyWindowSnapshot | null {
-        if (!this.currentSnapshot) {
-            return null;
+    async planWindows(nowTs: number = currentEpochMs(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
+        if (!Number.isFinite(nowTs)) {
+            throw new Error('nowTs must be a finite timestamp');
         }
 
         return {
@@ -205,21 +193,39 @@ export default class NegentropyAdapter {
         };
     }
 
-    useSnapshot(snapshot: NegentropyWindowSnapshot): NegentropyWindowEngine {
-        this.currentSnapshot = {
-            window: cloneWindow(snapshot.window),
-            stats: cloneWindowStats(snapshot.stats),
-            storage: snapshot.storage,
-        };
-        this.currentEngine = this.createEngineForSnapshot(snapshot);
-        this.stats = {
-            loaded: snapshot.stats.loaded,
-            skipped: snapshot.stats.skipped,
-            durationMs: snapshot.stats.durationMs,
-            frameSizeLimit: snapshot.stats.frameSizeLimit,
-        };
-        this.lastWindowStats = cloneWindowStats(snapshot.stats);
-        return this.currentEngine;
+        if (earliestTs == null) {
+            return [];
+        }
+
+        const windows: ReconciliationWindow[] = [];
+        const recentSpanTs = this.recentWindowDays * DAY_MS;
+        const olderSpanTs = this.olderWindowDays * DAY_MS;
+        const recentStart = Math.max(earliestTs, nowTs - recentSpanTs);
+
+        windows.push({
+            name: 'recent',
+            fromTs: recentStart,
+            toTs: nowTs,
+            maxRecords: this.maxRecordsPerWindow,
+            order: 0,
+        });
+
+        let cursorTo = recentStart - 1;
+        let order = 1;
+        while (cursorTo >= earliestTs) {
+            const fromTs = Math.max(earliestTs, cursorTo - olderSpanTs + 1);
+            windows.push({
+                name: `older_${order}`,
+                fromTs,
+                toTs: cursorTo,
+                maxRecords: this.maxRecordsPerWindow,
+                order,
+            });
+            cursorTo = fromTs - 1;
+            order += 1;
+        }
+
+        return windows;
     }
 
     async runWindowedSessionWithPeer(
@@ -227,7 +233,7 @@ export default class NegentropyAdapter {
         options: NegentropyWindowSessionOptions = {},
     ): Promise<NegentropySessionStats> {
         const startedAt = Date.now();
-        const sessionNowTs = options.nowTs ?? normalizeEpochMsToSeconds(options.nowMs) ?? currentEpochSeconds();
+        const sessionNowTs = options.nowTs ?? options.nowMs ?? currentEpochMs();
         const maxRoundsPerSession = options.maxRoundsPerSession ?? this.maxRoundsPerSession;
         assertPositiveInteger(maxRoundsPerSession, 'maxRoundsPerSession');
 
@@ -505,8 +511,8 @@ export default class NegentropyAdapter {
     }
 }
 
-function currentEpochSeconds(): number {
-    return Math.floor(Date.now() / 1000);
+function currentEpochMs(): number {
+    return Date.now();
 }
 
 function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor): SyncStoreCursor {

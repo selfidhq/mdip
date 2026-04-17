@@ -107,84 +107,12 @@ export function mapAcceptedOperationsToSyncRecords(operations: Operation[]): Map
 
         records.push({
             id: mapped.value.idHex,
-            ts: mapped.value.ts,
+            ts: mapped.value.tsMs,
             operation,
         });
     }
 
     return { records, invalid };
-}
-
-export async function filterKnownOperations(
-    operations: Operation[],
-    syncStore: Pick<OperationSyncStore, 'getByIds'>,
-    lookupChunkSize: number = 100,
-): Promise<FilterKnownOperationsResult> {
-    if (!Array.isArray(operations) || operations.length === 0) {
-        return {
-            operations: [],
-            mapped: 0,
-            known: 0,
-            invalid: 0,
-        };
-    }
-
-    const mappedIdsByIndex = new Map<number, string>();
-    const uniqueMappedIds = new Set<string>();
-    let invalid = 0;
-
-    for (const [index, operation] of operations.entries()) {
-        const mapped = mapOperationToSyncKey(operation);
-        if (!mapped.ok) {
-            invalid += 1;
-            continue;
-        }
-
-        mappedIdsByIndex.set(index, mapped.value.idHex);
-        uniqueMappedIds.add(mapped.value.idHex);
-    }
-
-    if (mappedIdsByIndex.size === 0) {
-        return {
-            operations: [...operations],
-            mapped: 0,
-            known: 0,
-            invalid,
-        };
-    }
-
-    const existingIds = new Set<string>();
-    const ids = Array.from(uniqueMappedIds);
-    const chunkSize = Number.isInteger(lookupChunkSize) && lookupChunkSize > 0
-        ? lookupChunkSize
-        : 100;
-
-    for (let i = 0; i < ids.length; i += chunkSize) {
-        const rows = await syncStore.getByIds(ids.slice(i, i + chunkSize));
-        for (const row of rows) {
-            existingIds.add(row.id);
-        }
-    }
-
-    const filtered: Operation[] = [];
-    let known = 0;
-
-    for (const [index, operation] of operations.entries()) {
-        const mappedId = mappedIdsByIndex.get(index);
-        if (mappedId && existingIds.has(mappedId)) {
-            known += 1;
-            continue;
-        }
-
-        filtered.push(operation);
-    }
-
-    return {
-        operations: filtered,
-        mapped: mappedIdsByIndex.size,
-        known,
-        invalid,
-    };
 }
 
 export function sortOperationsBySyncKey(operations: Operation[]): Operation[] {
@@ -200,8 +128,8 @@ export function sortOperationsBySyncKey(operations: Operation[]): Operation[] {
         }))
         .sort((a, b) => {
             if (a.mapped.ok && b.mapped.ok) {
-                if (a.mapped.value.ts !== b.mapped.value.ts) {
-                    return a.mapped.value.ts - b.mapped.value.ts;
+                if (a.mapped.value.tsMs !== b.mapped.value.tsMs) {
+                    return a.mapped.value.tsMs - b.mapped.value.tsMs;
                 }
 
                 if (a.mapped.value.idHex < b.mapped.value.idHex) {

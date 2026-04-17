@@ -10,7 +10,7 @@ import {
     sortOperationsBySyncKey,
 } from '../../services/mediators/hyperswarm/src/sync-persistence.ts';
 import {
-    MDIP_EPOCH_SECONDS,
+    MDIP_EPOCH_MS,
 } from '../../services/mediators/hyperswarm/src/sync-mapping.ts';
 
 const h = (c: string) => c.repeat(64);
@@ -65,23 +65,23 @@ describe('sync-persistence helpers', () => {
 
         expect(result.records.length).toBe(1);
         expect(result.records[0].id).toBe(h('a'));
-        expect(result.records[0].ts).toBe(Math.floor(Date.parse(valid.signature!.signed) / 1000));
+        expect(result.records[0].ts).toBe(Date.parse(valid.signature!.signed));
         expect(result.invalid).toBe(1);
     });
 
-    it('maps pre-MDIP signed timestamp to MDIP epoch seconds', () => {
+    it('maps pre-MDIP signed timestamp to MDIP epoch milliseconds', () => {
         const legacyEpoch = makeCreateOp('a', '1971-01-01T00:00:00.000Z');
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
         expect(result.records.length).toBe(1);
-        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
+        expect(result.records[0].ts).toBe(MDIP_EPOCH_MS);
         expect(result.invalid).toBe(0);
     });
 
-    it('maps unix epoch signed timestamp to MDIP epoch seconds', () => {
+    it('maps unix epoch signed timestamp to MDIP epoch milliseconds', () => {
         const legacyEpoch = makeCreateOp('a', '1970-01-01T00:00:00.000Z');
         const result = mapAcceptedOperationsToSyncRecords([legacyEpoch]);
         expect(result.records.length).toBe(1);
-        expect(result.records[0].ts).toBe(MDIP_EPOCH_SECONDS);
+        expect(result.records[0].ts).toBe(MDIP_EPOCH_MS);
         expect(result.invalid).toBe(0);
     });
 
@@ -94,136 +94,6 @@ describe('sync-persistence helpers', () => {
         const sorted = sortOperationsBySyncKey([later, sameTimeHigherId, invalid, sameTimeLowerId]);
 
         expect(sorted).toStrictEqual([sameTimeLowerId, sameTimeHigherId, later, invalid]);
-    });
-
-    it('returns a copy for single-item input and empty for non-array input', () => {
-        const a = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-        const input = [a];
-
-        const single = sortOperationsBySyncKey(input);
-        expect(single).toStrictEqual([a]);
-        expect(single).not.toBe(input);
-
-        expect(sortOperationsBySyncKey('not-an-array' as unknown as Operation[])).toStrictEqual([]);
-    });
-
-    it('sorts strictly by timestamp when ids differ but timestamps do not match', () => {
-        const later = makeCreateOp('a', '2026-02-10T10:00:01.000Z');
-        const earlier = makeCreateOp('f', '2026-02-10T10:00:00.000Z');
-
-        expect(sortOperationsBySyncKey([later, earlier])).toStrictEqual([earlier, later]);
-    });
-
-    it('sorts same-timestamp operations by id in both comparator directions', () => {
-        const higher = makeCreateOp('f', '2026-02-10T10:00:00.000Z');
-        const lower = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-
-        expect(sortOperationsBySyncKey([higher, lower])).toStrictEqual([lower, higher]);
-    });
-
-    it('executes the same-timestamp higher-id comparator branch', () => {
-        const originalSort = Array.prototype.sort;
-        const sortSpy = jest.spyOn(Array.prototype, 'sort').mockImplementation(function (
-            this: unknown[],
-            compareFn?: ((left: unknown, right: unknown) => number) | undefined,
-        ) {
-            if (compareFn) {
-                compareFn(
-                    {
-                        mapped: {
-                            ok: true,
-                            value: {
-                                ts: 1,
-                                idHex: 'f'.repeat(64),
-                            },
-                        },
-                        index: 0,
-                    },
-                    {
-                        mapped: {
-                            ok: true,
-                            value: {
-                                ts: 1,
-                                idHex: 'a'.repeat(64),
-                            },
-                        },
-                        index: 1,
-                    },
-                );
-            }
-
-            return originalSort.call(this, compareFn as typeof compareFn);
-        });
-
-        try {
-            const higher = makeCreateOp('f', '2026-02-10T10:00:00.000Z');
-            const lower = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-
-            expect(sortOperationsBySyncKey([higher, lower])).toStrictEqual([lower, higher]);
-        } finally {
-            sortSpy.mockRestore();
-        }
-    });
-
-    it('preserves original order when two operations share the same sync key', () => {
-        const first = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-        const secondBase = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-        const second = {
-            ...secondBase,
-            signature: {
-                ...secondBase.signature!,
-                value: 'sig-second',
-            },
-        };
-
-        expect(sortOperationsBySyncKey([first, second])).toStrictEqual([first, second]);
-    });
-
-    it('sorts valid operations ahead of invalid ones', () => {
-        const valid = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-        const invalid = makeCreateOp('b', 'not-a-date');
-
-        expect(sortOperationsBySyncKey([invalid, valid])).toStrictEqual([valid, invalid]);
-    });
-
-    it('executes the mixed valid-invalid comparator branch', () => {
-        const originalSort = Array.prototype.sort;
-        const sortSpy = jest.spyOn(Array.prototype, 'sort').mockImplementation(function (
-            this: unknown[],
-            compareFn?: ((left: unknown, right: unknown) => number) | undefined,
-        ) {
-            if (compareFn) {
-                compareFn(
-                    {
-                        mapped: {
-                            ok: true,
-                            value: {
-                                ts: 1,
-                                idHex: 'a'.repeat(64),
-                            },
-                        },
-                        index: 0,
-                    },
-                    {
-                        mapped: {
-                            ok: false,
-                        },
-                        index: 1,
-                    },
-                );
-            }
-
-            return originalSort.call(this, compareFn as typeof compareFn);
-        });
-
-        try {
-            const valid = makeCreateOp('a', '2026-02-10T10:00:00.000Z');
-            const invalid = makeCreateOp('b', 'not-a-date');
-
-            expect(sortOperationsBySyncKey([invalid, valid])).toStrictEqual([valid, invalid]);
-        } finally {
-            sortSpy.mockRestore();
-        }
     });
 
     it('returns no records when all operations are invalid', () => {

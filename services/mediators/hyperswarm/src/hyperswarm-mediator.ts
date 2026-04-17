@@ -75,7 +75,7 @@ import {
     sortOperationsBySyncKey,
 } from './sync-persistence.js';
 import {
-    MDIP_EPOCH_SECONDS,
+    MDIP_EPOCH_MS,
     mapOperationToSyncKey,
 } from './sync-mapping.js';
 import { exit } from 'process';
@@ -1152,7 +1152,7 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
 function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): ReconciliationWindow {
     return {
         name: 'bootstrap_full_history',
-        fromTs: MDIP_EPOCH_SECONDS,
+        fromTs: MDIP_EPOCH_MS,
         toTs: Number.MAX_SAFE_INTEGER,
         maxRecords: config.negentropyMaxRecordsPerWindow,
         order,
@@ -1160,20 +1160,8 @@ function buildBootstrapPageWindow(after?: SyncStoreCursor | null, order = 0): Re
     };
 }
 
-function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowSnapshot | null {
-    if (!snapshot) {
-        return null;
-    }
-
-    return {
-        window: cloneWindow(snapshot.window),
-        stats: cloneWindowStats(snapshot.stats)!,
-        storage: snapshot.storage,
-    };
-}
-
-function currentSyncTimestampSeconds(): number {
-    return Math.floor(Date.now() / 1000);
+function currentSyncTimestampMs(): number {
+    return Date.now();
 }
 
 function makeWindowId(window: ReconciliationWindow): string {
@@ -1287,7 +1275,7 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSec());
+    const windows = await negentropyAdapter.planWindows(currentSyncTimestampMs());
     if (windows.length > 0) {
         return windows;
     }
@@ -1825,7 +1813,7 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
 
         session.receivedPushIds.add(mapped.value.idHex);
         const cursor: SyncStoreCursor = {
-            ts: mapped.value.tsSec,
+            ts: mapped.value.tsMs,
             id: mapped.value.idHex,
         };
 

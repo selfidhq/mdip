@@ -1,7 +1,7 @@
 import { Operation } from '@mdip/gatekeeper/types';
 import { jest } from '@jest/globals';
 import {
-    MDIP_EPOCH_SECONDS,
+    MDIP_EPOCH_MS,
     SYNC_ID_BYTES_LEN,
     mapOperationToSyncKey,
     type SyncMappingErrorCode,
@@ -37,17 +37,17 @@ describe('sync-mapping', () => {
         if (result.ok) {
             expect(result.value.idHex).toBe(h('a'));
             expect(result.value.idBytes.length).toBe(SYNC_ID_BYTES_LEN);
-            expect(result.value.ts).toBe(Math.floor(Date.parse('2026-02-13T00:00:00.000Z') / 1000));
+            expect(result.value.tsMs).toBe(Date.parse('2026-02-13T00:00:00.000Z'));
             expect(result.value.operation).toBe(op);
         }
     });
 
-    it('truncates signed timestamps to epoch seconds for sync keys', () => {
+    it('preserves millisecond precision in sync timestamps', () => {
         const op = makeOp({ signed: '2026-02-13T00:00:00.123Z' });
         const result = mapOperationToSyncKey(op);
         expect(result.ok).toBe(true);
         if (result.ok) {
-            expect(result.value.ts).toBe(Math.floor(Date.parse('2026-02-13T00:00:00.123Z') / 1000));
+            expect(result.value.tsMs).toBe(Date.parse('2026-02-13T00:00:00.123Z'));
         }
     });
 
@@ -56,7 +56,7 @@ describe('sync-mapping', () => {
         const result = mapOperationToSyncKey(op);
         expect(result.ok).toBe(true);
         if (result.ok) {
-            expect(result.value.ts).toBe(MDIP_EPOCH_SECONDS);
+            expect(result.value.tsMs).toBe(MDIP_EPOCH_MS);
         }
     });
 
@@ -65,7 +65,7 @@ describe('sync-mapping', () => {
         const result = mapOperationToSyncKey(op);
         expect(result.ok).toBe(true);
         if (result.ok) {
-            expect(result.value.ts).toBe(MDIP_EPOCH_SECONDS);
+            expect(result.value.tsMs).toBe(MDIP_EPOCH_MS);
         }
     });
 
