@@ -1158,8 +1158,8 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
         : null;
 }
 
-function currentSyncTimestampMs(): number {
-    return Date.now();
+function currentSyncTimestampSeconds(): number {
+    return Math.floor(Date.now() / 1000);
 }
 
 function makeWindowId(window: ReconciliationWindow): string {
@@ -1275,7 +1275,7 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(currentSyncTimestampMs());
+    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSeconds());
     if (windows.length > 0) {
         return windows;
     }
@@ -1952,7 +1952,7 @@ function trackReceivedWindowOperations(session: PeerSyncSession, operations: Ope
 
         session.receivedPushIds.add(mapped.value.idHex);
         const cursor: SyncStoreCursor = {
-            ts: mapped.value.tsMs,
+            ts: mapped.value.ts,
             id: mapped.value.idHex,
         };
 
