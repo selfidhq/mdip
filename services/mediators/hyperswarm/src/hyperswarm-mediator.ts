@@ -10,9 +10,9 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
-import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
-import CipherNode from '@mdip/cipher/node';
+import { Operation } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
+import canonicalizeModule from 'canonicalize';
 import config from './config.js';
 import type { OperationSyncStore, SyncStoreCursor } from './db/types.js';
 import SqliteOperationSyncStore from './db/sqlite.js';
@@ -300,8 +300,11 @@ export interface MediatorMainOptions {
 const gatekeeper = new GatekeeperClient();
 const keymaster = new KeymasterClient();
 const ipfs = new KuboClient();
-const cipher = new CipherNode();
+const canonicalize = canonicalizeModule as unknown as (input: unknown) => string;
 
+function hashJSON(input: unknown): string {
+    return Buffer.from(sha256(utf8ToBytes(canonicalize(input)))).toString('hex');
+}
 function createConfiguredSyncStore(): OperationSyncStore {
     if (config.db === 'postgres') {
         return new PostgresOperationSyncStore(config.postgresURL);
@@ -2048,7 +2051,7 @@ async function importBatch(batch: Operation[]): Promise<Operation[]> {
     // The batch we receive from other hyperswarm nodes includes just operations.
     // We have to wrap the operations in new events before submitting to our gatekeeper for importing
     try {
-        const hash = cipher.hashJSON(batch);
+        const hash = hashJSON(batch);
         const events = [];
         const now = new Date();
         const isoTime = now.toISOString();
@@ -2230,7 +2233,7 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
 const batchesSeen: Record<string, boolean> = {};
 
 function newBatch(batch: Operation[]): boolean {
-    const hash = cipher.hashJSON(batch);
+    const hash = hashJSON(batch);
 
     if (!batchesSeen[hash]) {
         batchesSeen[hash] = true;
