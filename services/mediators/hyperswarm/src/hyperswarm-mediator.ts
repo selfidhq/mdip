@@ -1984,7 +1984,7 @@ async function handleNegentropyRoundAsResponder(
     }
 }
 
-function sendBatch(conn: HyperswarmConnection, batch: Operation[]): number {
+function sendBatch(conn: SwarmConnection, batch: Operation[]): number {
     const limit = 8 * 1024 * 1014; // 8 MB limit
     const peerKey = b4a.toString(conn.remotePublicKey, 'hex');
 
@@ -2024,7 +2024,7 @@ function isStringArray(arr: any[]): arr is string[] {
     return arr.every(item => typeof item === 'string');
 }
 
-async function shareDb(conn: HyperswarmConnection): Promise<void> {
+async function shareDb(conn: SwarmConnection): Promise<void> {
     const startTimeMs = Date.now();
     try {
         const batchSize = 1000; // export DIDs in batches of 1000 for scalability
