@@ -58,9 +58,10 @@ import {
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
 import {
-    buildBootstrapPageWindow,
-    buildContinuationWindow,
+    buildInitialHistoryWindow,
+    buildNextHistoryPage,
     buildRoundCapSplitWindow,
+    MDIP_EPOCH_SECONDS,
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreIfEmpty } from './bootstrap.js';
 import {
@@ -244,8 +245,6 @@ interface PeerSyncSession {
     windowIndex: number;
     windowId: string | null;
     currentWindowStats: NegentropyWindowStats | null;
-    currentWindowSnapshot: NegentropyWindowSnapshot | null;
-    currentWindowEngine: NegentropyWindowEngine | null;
     startedAt: number;
     lastActivity: number;
     pendingHaveIds: Set<string>;
@@ -638,8 +637,6 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         windowIndex: 0,
         windowId: null,
         currentWindowStats: null,
-        currentWindowSnapshot: null,
-        currentWindowEngine: null,
         startedAt: now,
         lastActivity: now,
         pendingHaveIds: new Set<string>(),
@@ -1275,12 +1272,12 @@ async function buildInitialHistoryWindowForSession(): Promise<ReconciliationWind
         throw new Error('negentropy adapter unavailable');
     }
 
-    const windows = await negentropyAdapter.planWindows(currentSyncTimestampSeconds());
-    if (windows.length > 0) {
-        return windows;
-    }
-
-    return [buildBootstrapPageWindow(config.negentropyMaxRecordsPerWindow)];
+    const earliestTs = await negentropyAdapter.getEarliestTimestamp();
+    return buildInitialHistoryWindow(
+        earliestTs ?? MDIP_EPOCH_SECONDS,
+        currentSyncTimestampSeconds(),
+        config.negentropyMaxRecordsPerWindow,
+    );
 }
 
 function maybeStartBackgroundPrebuild(reason: string): void {
@@ -1504,163 +1501,6 @@ function trackRemoteWindowProgress(
     session.remoteWindowLastCursor = cloneCursor(progress.lastCursor);
 }
 
-function getNextWindowOrder(session: PeerSyncSession): number {
-    let maxOrder = -1;
-    for (const window of session.windows) {
-        if (window.order > maxOrder) {
-            maxOrder = window.order;
-        }
-    }
-
-    return maxOrder + 1;
-}
-
-function getSessionContinuationDecision(session: PeerSyncSession): {
-    windowAfter: SyncStoreCursor | null;
-    localCappedByRecords: boolean;
-    localLastCursor: SyncStoreCursor | null;
-    remoteCappedByRecords: boolean;
-    remoteLastCursor: SyncStoreCursor | null;
-    receivedPushCount: number;
-    receivedKnownPushCount: number;
-    receivedPushMaxCursor: SyncStoreCursor | null;
-    chosenCursor: SyncStoreCursor | null;
-    blockedByAfter: boolean;
-} {
-    const window = getSessionWindow(session);
-    if (!window) {
-        return {
-            windowAfter: null,
-            localCappedByRecords: false,
-            localLastCursor: null,
-            remoteCappedByRecords: false,
-            remoteLastCursor: null,
-            receivedPushCount: 0,
-            receivedKnownPushCount: 0,
-            receivedPushMaxCursor: null,
-            chosenCursor: null,
-            blockedByAfter: false,
-        };
-    }
-
-    const localStats = session.currentWindowStats;
-    const localCappedByRecords = localStats?.cappedByRecords === true;
-    const localLastCursor = cloneCursor(localStats?.lastCursor);
-    const remoteCappedByRecords = session.remoteWindowCappedByRecords;
-    const remoteLastCursor = cloneCursor(session.remoteWindowLastCursor);
-    const receivedPushCount = session.receivedPushIds.size;
-    const receivedKnownPushCount = session.receivedKnownPushIds.size;
-    const receivedPushMaxCursor = cloneCursor(session.receivedPushMaxCursor);
-    const decision = getContinuationCursorDecision({
-        windowName: window.name,
-        windowAfter: cloneCursor(window.after),
-        windowMaxRecords: window.maxRecords,
-        localCappedByRecords,
-        localLastCursor,
-        remoteCappedByRecords,
-        remoteLastCursor,
-        receivedPushCount,
-        receivedKnownPushCount,
-        receivedPushMaxCursor,
-    });
-
-    return {
-        windowAfter: cloneCursor(window.after),
-        localCappedByRecords,
-        localLastCursor,
-        remoteCappedByRecords,
-        remoteLastCursor,
-        receivedPushCount,
-        receivedKnownPushCount,
-        receivedPushMaxCursor,
-        chosenCursor: decision.chosenCursor,
-        blockedByAfter: decision.blockedByAfter,
-    };
-}
-
-async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyncSession): Promise<boolean> {
-    const currentWindow = getSessionWindow(session);
-    if (!currentWindow) {
-        return false;
-    }
-
-    const decision = getSessionContinuationDecision(session);
-    const cursor = decision.chosenCursor;
-
-    if (!cursor) {
-        return false;
-    }
-
-    const nextWindow = buildNextHistoryPage(currentWindow, cursor, getNextWindowOrder(session));
-    session.windows.splice(session.windowIndex + 1, 0, nextWindow);
-    session.windowIndex += 1;
-    await startNextNegentropyWindow(peerKey, session);
-    return true;
-}
-
-function buildWindowProgress(session: PeerSyncSession): NegMsgMessage['windowProgress'] | undefined {
-    const stats = session.currentWindowStats;
-    if (!stats) {
-        return undefined;
-    }
-
-    return {
-        cappedByRecords: stats.cappedByRecords,
-        lastCursor: stats.lastCursor
-            ? {
-                ts: stats.lastCursor.ts,
-                id: stats.lastCursor.id,
-            }
-            : undefined,
-    };
-}
-
-function parseWindowProgress(raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress']): {
-    cappedByRecords: boolean;
-    lastCursor: SyncStoreCursor | null;
-} | null {
-    if (!raw || typeof raw !== 'object') {
-        return null;
-    }
-
-    const cappedByRecords = raw.cappedByRecords === true;
-    const lastCursor = raw.lastCursor;
-
-    if (!lastCursor) {
-        return {
-            cappedByRecords,
-            lastCursor: null,
-        };
-    }
-
-    const ts = Number(lastCursor.ts);
-    const id = String(lastCursor.id ?? '').toLowerCase();
-    if (!Number.isInteger(ts) || !NEG_SYNC_ID_RE.test(id)) {
-        return null;
-    }
-
-    return {
-        cappedByRecords,
-        lastCursor: {
-            ts,
-            id,
-        },
-    };
-}
-
-function trackRemoteWindowProgress(
-    session: PeerSyncSession,
-    raw: NegMsgMessage['windowProgress'] | NegCloseMessage['windowProgress'],
-): void {
-    const progress = parseWindowProgress(raw);
-    if (!progress) {
-        return;
-    }
-
-    session.remoteWindowCappedByRecords = progress.cappedByRecords;
-    session.remoteWindowLastCursor = cloneCursor(progress.lastCursor);
-}
-
 function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
     if (!a) {
         return cloneCursor(b);
@@ -1703,7 +1543,7 @@ function getContinuationCursor(session: PeerSyncSession): SyncStoreCursor | null
         cursor = minCursor(cursor, session.remoteWindowLastCursor);
     }
 
-    if (!cursor && window.name === 'bootstrap_full_history' && session.receivedPushIds.size >= window.maxRecords) {
+    if (!cursor && window.name === 'history_paged' && session.receivedPushIds.size >= window.maxRecords) {
         cursor = cloneCursor(session.receivedPushMaxCursor);
     }
 
@@ -1729,7 +1569,7 @@ async function maybeContinueCappedWindowPaging(peerKey: string, session: PeerSyn
         return false;
     }
 
-    const nextWindow = buildContinuationWindow(currentWindow, cursor, getNextWindowOrder(session));
+    const nextWindow = buildNextHistoryPage(currentWindow, cursor, getNextWindowOrder(session));
     session.windows.splice(session.windowIndex + 1, 0, nextWindow);
     session.windowIndex += 1;
     await startNextNegentropyWindow(peerKey, session);
@@ -1977,11 +1817,6 @@ async function maybeFinalizeInitiatorSession(peerKey: string, session: PeerSyncS
 
     const continued = await maybeContinueCappedWindowPaging(peerKey, session);
     if (continued) {
-        return;
-    }
-
-    const advanced = await maybeAdvanceToOlderWindow(peerKey, session);
-    if (advanced) {
         return;
     }
 

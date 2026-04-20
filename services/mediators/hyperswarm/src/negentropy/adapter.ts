@@ -15,7 +15,6 @@ const MIN_FRAME_SIZE_LIMIT = 4096;
 const DEFAULT_ITERATE_LIMIT = 1000;
 const DEFAULT_MAX_RECORDS_PER_WINDOW = 25_000;
 const DEFAULT_MAX_ROUNDS_PER_SESSION = 64;
-const DAY_SECONDS = 24 * 60 * 60;
 const require = createRequire(import.meta.url);
 
 type NegentropyFrameValue = string | Uint8Array;
@@ -181,53 +180,6 @@ export default class NegentropyAdapter {
         return cloneWindowStats(snapshot.stats);
     }
 
-    async planWindows(nowTs: number = currentEpochSeconds(), earliestTsOverride?: number): Promise<ReconciliationWindow[]> {
-        if (!Number.isFinite(nowTs)) {
-            throw new Error('nowTs must be a finite timestamp');
-        }
-
-        return {
-            window: cloneWindow(this.currentSnapshot.window),
-            stats: cloneWindowStats(this.currentSnapshot.stats),
-            storage: this.currentSnapshot.storage,
-        };
-    }
-
-        if (earliestTs == null) {
-            return [];
-        }
-
-        const windows: ReconciliationWindow[] = [];
-        const recentSpanTs = this.recentWindowDays * DAY_SECONDS;
-        const olderSpanTs = this.olderWindowDays * DAY_SECONDS;
-        const recentStart = Math.max(earliestTs, nowTs - recentSpanTs);
-
-        windows.push({
-            name: 'recent',
-            fromTs: recentStart,
-            toTs: nowTs,
-            maxRecords: this.maxRecordsPerWindow,
-            order: 0,
-        });
-
-        let cursorTo = recentStart - 1;
-        let order = 1;
-        while (cursorTo >= earliestTs) {
-            const fromTs = Math.max(earliestTs, cursorTo - olderSpanTs + 1);
-            windows.push({
-                name: `older_${order}`,
-                fromTs,
-                toTs: cursorTo,
-                maxRecords: this.maxRecordsPerWindow,
-                order,
-            });
-            cursorTo = fromTs - 1;
-            order += 1;
-        }
-
-        return windows;
-    }
-
     async runWindowedSessionWithPeer(
         peer: NegentropyAdapter,
         options: NegentropyWindowSessionOptions = {},
@@ -257,6 +209,10 @@ export default class NegentropyAdapter {
             undefined,
             nextOrder,
         );
+
+        while (window) {
+            const localWindowStats = await this.rebuildForWindow(window);
+            const peerWindowStats = await peer.rebuildForWindow(window);
 
         while (window) {
             const localSnapshot = await this.buildSnapshotForWindow(window);
@@ -299,6 +255,11 @@ export default class NegentropyAdapter {
 
             if (roundsResult.cappedByRounds) {
                 window = buildRoundCapSplitWindow(window);
+                continue;
+            }
+
+            if (!roundsResult.completed) {
+                window = null;
                 continue;
             }
 
@@ -475,11 +436,7 @@ export default class NegentropyAdapter {
             'negentropy adapter rebuilt'
         );
 
-        return {
-            window: cloneWindow(window),
-            stats: cloneWindowStats(windowStats),
-            storage,
-        };
+        return windowStats;
     }
 
     private async reconcileWindowWithPeer(
@@ -513,6 +470,41 @@ export default class NegentropyAdapter {
 
 function currentEpochSeconds(): number {
     return Math.floor(Date.now() / 1000);
+}
+
+function minCursor(a: SyncStoreCursor | null, b: SyncStoreCursor | null): SyncStoreCursor | null {
+    if (!a) {
+        return cloneCursor(b);
+    }
+
+    if (!b) {
+        return cloneCursor(a);
+    }
+
+    if (a.ts !== b.ts) {
+        return a.ts < b.ts ? cloneCursor(a) : cloneCursor(b);
+    }
+
+    return a.id.localeCompare(b.id) <= 0
+        ? cloneCursor(a)
+        : cloneCursor(b);
+}
+
+function getHistoryContinuationCursor(
+    localWindowStats: NegentropyWindowStats,
+    peerWindowStats: NegentropyWindowStats,
+): SyncStoreCursor | null {
+    let cursor: SyncStoreCursor | null = null;
+
+    if (localWindowStats.cappedByRecords && localWindowStats.lastCursor) {
+        cursor = cloneCursor(localWindowStats.lastCursor);
+    }
+
+    if (peerWindowStats.cappedByRecords && peerWindowStats.lastCursor) {
+        cursor = minCursor(cursor, peerWindowStats.lastCursor);
+    }
+
+    return cursor;
 }
 
 function normalizeEpochMsToSeconds(value: number | undefined): number | undefined {
