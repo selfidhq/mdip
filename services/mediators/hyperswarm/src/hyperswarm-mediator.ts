@@ -63,7 +63,7 @@ import {
     buildRoundCapSplitWindow,
     MDIP_EPOCH_SECONDS,
 } from './negentropy/windows.js';
-import { bootstrapSyncStoreIfEmpty } from './bootstrap.js';
+import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
 import {
     compareSyncCursor,
     getContinuationCursorDecision,
