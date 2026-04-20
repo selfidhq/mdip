@@ -53,6 +53,8 @@ const config = {
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
+        '^hyperswarm$': '<rootDir>/tests/common/hyperswarm.mock.ts',
+        '^graceful-goodbye$': '<rootDir>/tests/common/graceful-goodbye.mock.ts',
     },
     testPathIgnorePatterns: [
         "/node_modules/",
@@ -61,7 +63,11 @@ const config = {
     ],
     coveragePathIgnorePatterns: [
         "/node_modules/",
+        "/tests/common/",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
+        "/services/mediators/hyperswarm/src/hyperswarm-mediator\\.ts$",
+        "/services/mediators/hyperswarm/src/db/postgres\\.ts$",
+        "/services/mediators/hyperswarm/src/db/sqlite\\.ts$",
     ]
 };
 
