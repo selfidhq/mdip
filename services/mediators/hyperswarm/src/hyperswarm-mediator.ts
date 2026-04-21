@@ -65,18 +65,8 @@ import {
 } from './negentropy/windows.js';
 import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
 import {
-    compareSyncCursor,
-    getContinuationCursorDecision,
-} from './negentropy/cursor.js';
-import {
-    buildInitialHistoryWindow,
-    buildNextHistoryPage,
-    buildRoundCapSplitWindow,
-    MDIP_EPOCH_SECONDS,
-} from './negentropy/windows.js';
-import { bootstrapSyncStoreFromGatekeeper } from './bootstrap.js';
-import {
     filterKnownOperations,
+    filterOperationsByAcceptedHashes,
     filterIndexRejectedOperations,
     mapAcceptedOperationsToSyncRecords,
     sortOperationsBySyncKey,
