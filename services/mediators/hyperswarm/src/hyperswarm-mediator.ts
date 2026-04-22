@@ -39,7 +39,7 @@ import {
     type SyncMode,
 } from './negentropy/protocol.js';
 import {
-    shouldAcceptInboundLegacySync,
+    shouldAcceptLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
@@ -224,10 +224,6 @@ interface ConnectionInfo {
     legacyOutboundDeferred: boolean;
     legacyInboundDeferred: DeferredLegacyInboundTask | null;
     legacyFallbackNoted: boolean;
-    transportMode: 'unknown' | 'legacy' | 'framed';
-    peerTransportFramingVersion: number | null;
-    inboundBuffer: Buffer;
-    inboundReceiveChain: Promise<void>;
 }
 
 interface PeerSyncSession {
@@ -327,6 +323,8 @@ const NEG_MAX_OPS_PER_PUSH = 256;
 const NEG_MAX_BYTES_PER_PUSH = 512 * 1024;
 const NEG_REPAIR_INTERVAL_MS = config.negentropyIntervalSeconds * 1000;
 const NEG_ADAPTER_MAX_AGE_MS = 60 * 1000;
+const LEGACY_CAPABILITY_GRACE_MS = 5 * 1000;
+const LEGACY_NEGENTROPY_FALLBACK_MS = 60 * 1000;
 const connectionInfo: Record<string, ConnectionInfo> = {};
 const knownNodes: Record<string, NodeInfo> = {};
 const knownPeers: Record<string, string> = {};
@@ -459,10 +457,6 @@ function addConnection(conn: HyperswarmConnection): void {
         legacyOutboundDeferred: false,
         legacyInboundDeferred: null,
         legacyFallbackNoted: false,
-        transportMode: 'unknown',
-        peerTransportFramingVersion: null,
-        inboundBuffer: Buffer.alloc(0),
-        inboundReceiveChain: Promise.resolve(),
     };
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
@@ -2246,13 +2240,12 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
 
             if (ready) {
                 const mode = connectionInfo[name]?.syncMode ?? 'unknown';
-                const transportMode = connectionInfo[name]?.transportMode ?? 'unknown';
                 const deferLegacy = shouldDeferLegacyForPeer(name);
-                if (!shouldAcceptInboundLegacySync(mode, transportMode, config.legacySyncEnabled, deferLegacy)) {
+                if (!shouldAcceptLegacySync(mode, config.legacySyncEnabled, deferLegacy)) {
                     if (mode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                         deferLegacyInbound(name, { name, msg, conn });
                     } else {
-                        log.debug({ peer: shortName(name), mode, transportMode }, 'shareDb skipped by sync mode policy');
+                        log.debug({ peer: shortName(name), mode }, 'shareDb skipped by sync mode policy');
                     }
                     return;
                 }
@@ -2475,21 +2468,12 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'sync') {
         const deferLegacy = shouldDeferLegacyForPeer(peerKey);
-        if (!shouldAcceptInboundLegacySync(
-            connectionInfo[peerKey].syncMode,
-            connectionInfo[peerKey].transportMode,
-            config.legacySyncEnabled,
-            deferLegacy,
-        )) {
+        if (!shouldAcceptLegacySync(connectionInfo[peerKey].syncMode, config.legacySyncEnabled, deferLegacy)) {
             if (connectionInfo[peerKey].syncMode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                 deferLegacyInbound(peerKey, { name: peerKey, msg, conn: conn.connection });
             } else {
                 log.debug(
-                    {
-                        peer: shortName(peerKey),
-                        mode: connectionInfo[peerKey].syncMode,
-                        transportMode: connectionInfo[peerKey].transportMode,
-                    },
+                    { peer: shortName(peerKey), mode: connectionInfo[peerKey].syncMode },
                     'ignoring legacy sync request'
                 );
             }
