@@ -57,6 +57,7 @@ import {
     chunkIds,
     chunkOperationsForPush,
 } from './negentropy/transfer.js';
+import { compareSyncCursor } from './negentropy/cursor.js';
 import {
     buildInitialHistoryWindow,
     buildNextHistoryPage,
@@ -1126,14 +1127,6 @@ function cloneCursor(cursor?: SyncStoreCursor | null): SyncStoreCursor | null {
         ts: cursor.ts,
         id: cursor.id,
     };
-}
-
-function compareSyncCursor(a: SyncStoreCursor, b: SyncStoreCursor): number {
-    if (a.ts !== b.ts) {
-        return a.ts - b.ts;
-    }
-
-    return a.id.localeCompare(b.id);
 }
 
 function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindowStats | null {
