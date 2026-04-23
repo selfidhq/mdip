@@ -236,6 +236,8 @@ interface PeerSyncSession {
     windowIndex: number;
     windowId: string | null;
     currentWindowStats: NegentropyWindowStats | null;
+    currentWindowSnapshot: NegentropyWindowSnapshot | null;
+    currentWindowEngine: NegentropyWindowEngine | null;
     startedAt: number;
     lastActivity: number;
     pendingHaveIds: Set<string>;
@@ -625,6 +627,8 @@ function createPeerSession(peerKey: string, mode: SyncMode, initiator: boolean, 
         windowIndex: 0,
         windowId: null,
         currentWindowStats: null,
+        currentWindowSnapshot: null,
+        currentWindowEngine: null,
         startedAt: now,
         lastActivity: now,
         pendingHaveIds: new Set<string>(),
@@ -1136,6 +1140,25 @@ function cloneWindowStats(stats: NegentropyWindowStats | null): NegentropyWindow
         : null;
 }
 
+function cloneWindow(window: ReconciliationWindow): ReconciliationWindow {
+    return {
+        ...window,
+        after: cloneCursor(window.after) ?? undefined,
+    };
+}
+
+function cloneWindowSnapshot(snapshot: NegentropyWindowSnapshot | null): NegentropyWindowSnapshot | null {
+    if (!snapshot) {
+        return null;
+    }
+
+    return {
+        window: cloneWindow(snapshot.window),
+        stats: cloneWindowStats(snapshot.stats)!,
+        storage: snapshot.storage,
+    };
+}
+
 function currentSyncTimestampSeconds(): number {
     return Math.floor(Date.now() / 1000);
 }
@@ -1218,6 +1241,8 @@ function initializeSessionWindowState(
     session.receivedPushMaxCursor = null;
     session.remoteWindowCappedByRecords = false;
     session.remoteWindowLastCursor = null;
+    session.currentWindowSnapshot = null;
+    session.currentWindowEngine = null;
     session.currentWindowStats = {
         ...windowStats,
         windowName: window.name,
