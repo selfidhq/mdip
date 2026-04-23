@@ -420,10 +420,12 @@ export default class NegentropyAdapter {
                 windowName: window.name,
                 fromTs: window.fromTs,
                 toTs: window.toTs,
+                windowAfter: cloneCursor(window.after),
                 loaded,
                 skipped,
                 durationMs,
                 cappedByRecords,
+                lastCursor,
                 frameSizeLimit: this.frameSizeLimit,
             },
             'negentropy adapter rebuilt'
