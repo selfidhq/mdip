@@ -1,5 +1,6 @@
 import {
     shouldAcceptLegacySync,
+    shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,

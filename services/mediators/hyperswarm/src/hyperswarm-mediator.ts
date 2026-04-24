@@ -39,7 +39,7 @@ import {
     type SyncMode,
 } from './negentropy/protocol.js';
 import {
-    shouldAcceptLegacySync,
+    shouldAcceptInboundLegacySync,
     shouldDeferLegacySync,
     shouldSchedulePeriodicRepair,
     shouldStartConnectTimeNegentropy,
@@ -78,6 +78,13 @@ import {
 import {
     mapOperationToSyncKey,
 } from './sync-mapping.js';
+import {
+    DEFAULT_MAX_FRAMED_MESSAGE_BYTES,
+    decodeFramedMessages,
+    decodeLegacyJsonMessages,
+    encodeFramedMessage,
+    supportsLegacyRawTransportMessage,
+} from './transport-framing.js';
 import { exit } from 'process';
 import path from 'path';
 import { pathToFileURL } from 'url';
@@ -244,6 +251,10 @@ interface ConnectionInfo {
     legacyOutboundDeferred: boolean;
     legacyInboundDeferred: DeferredLegacyInboundTask | null;
     legacyFallbackNoted: boolean;
+    transportMode: 'unknown' | 'legacy' | 'framed';
+    peerTransportFramingVersion: number | null;
+    inboundBuffer: Buffer;
+    inboundReceiveChain: Promise<void>;
 }
 
 interface PeerSyncSession {
@@ -338,6 +349,8 @@ EventEmitter.defaultMaxListeners = 100;
 const REGISTRY = 'hyperswarm';
 const BATCH_SIZE = 100;
 const NEGENTROPY_VERSION = 2;
+const TRANSPORT_FRAMING_VERSION = 1;
+const MAX_FRAMED_MESSAGE_BYTES = DEFAULT_MAX_FRAMED_MESSAGE_BYTES;
 const NEG_SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 const NEG_MAX_IDS_PER_OPS_REQ = 1_000;
 const NEG_MAX_IDS_PER_LOOKUP = 1_000;
@@ -479,6 +492,10 @@ function addConnection(conn: HyperswarmConnection): void {
         legacyOutboundDeferred: false,
         legacyInboundDeferred: null,
         legacyFallbackNoted: false,
+        transportMode: 'unknown',
+        peerTransportFramingVersion: null,
+        inboundBuffer: Buffer.alloc(0),
+        inboundReceiveChain: Promise.resolve(),
     };
 
     const peerNames = Object.values(connectionInfo).map(info => info.peerName);
@@ -2529,12 +2546,13 @@ let exportQueue = asyncLib.queue<ExportQueueTask, asyncLib.ErrorCallback>(
 
             if (ready) {
                 const mode = connectionInfo[name]?.syncMode ?? 'unknown';
+                const transportMode = connectionInfo[name]?.transportMode ?? 'unknown';
                 const deferLegacy = shouldDeferLegacyForPeer(name);
-                if (!shouldAcceptLegacySync(mode, config.legacySyncEnabled, deferLegacy)) {
+                if (!shouldAcceptInboundLegacySync(mode, transportMode, config.legacySyncEnabled, deferLegacy)) {
                     if (mode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                         deferLegacyInbound(name, { name, msg, conn });
                     } else {
-                        log.debug({ peer: shortName(name), mode }, 'shareDb skipped by sync mode policy');
+                        log.debug({ peer: shortName(name), mode, transportMode }, 'shareDb skipped by sync mode policy');
                     }
                     return;
                 }
@@ -2757,12 +2775,21 @@ async function receiveMsg(peerKey: string, json: Buffer | string): Promise<void>
 
     if (msg.type === 'sync') {
         const deferLegacy = shouldDeferLegacyForPeer(peerKey);
-        if (!shouldAcceptLegacySync(connectionInfo[peerKey].syncMode, config.legacySyncEnabled, deferLegacy)) {
+        if (!shouldAcceptInboundLegacySync(
+            connectionInfo[peerKey].syncMode,
+            connectionInfo[peerKey].transportMode,
+            config.legacySyncEnabled,
+            deferLegacy,
+        )) {
             if (connectionInfo[peerKey].syncMode === 'legacy' && config.legacySyncEnabled && deferLegacy) {
                 deferLegacyInbound(peerKey, { name: peerKey, msg, conn: conn.connection });
             } else {
                 log.debug(
-                    { peer: shortName(peerKey), mode: connectionInfo[peerKey].syncMode },
+                    {
+                        peer: shortName(peerKey),
+                        mode: connectionInfo[peerKey].syncMode,
+                        transportMode: connectionInfo[peerKey].transportMode,
+                    },
                     'ignoring legacy sync request'
                 );
             }
