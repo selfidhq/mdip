@@ -1,8 +1,11 @@
-import type { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
+import type { GatekeeperEvent, GatekeeperInterface, Operation } from '@mdip/gatekeeper/types';
 import {
+    collectMissingAcceptedHashes,
     dedupeOperationsByHash,
     filterOperationsByAcceptedHashes,
 } from './sync-persistence.js';
+
+type AcceptedEventLookup = Pick<GatekeeperInterface, 'exportEventsByHashes'>;
 
 function toOperations(events: GatekeeperEvent[]): Operation[] {
     return events
@@ -10,20 +13,23 @@ function toOperations(events: GatekeeperEvent[]): Operation[] {
         .filter((operation): operation is Operation => !!operation);
 }
 
-export function resolveAcceptedOperationsToPersist(
+export async function resolveAcceptedOperationsToPersist(
     acceptedCandidates: Operation[],
     acceptedHashes: string[] = [],
-    acceptedEvents: GatekeeperEvent[] = [],
-): Operation[] {
+    gatekeeper: AcceptedEventLookup,
+): Promise<Operation[]> {
     const acceptedFromCandidates = filterOperationsByAcceptedHashes(acceptedCandidates, acceptedHashes);
-    const acceptedFromProcessEvents = dedupeOperationsByHash(toOperations(acceptedEvents));
+    const missingAcceptedHashes = collectMissingAcceptedHashes(acceptedCandidates, acceptedHashes);
 
-    if (acceptedFromProcessEvents.length === 0) {
+    if (missingAcceptedHashes.length === 0) {
         return acceptedFromCandidates;
     }
 
+    const acceptedDeferredEvents = await gatekeeper.exportEventsByHashes(missingAcceptedHashes);
+    const acceptedDeferredOperations = toOperations(acceptedDeferredEvents);
+
     return dedupeOperationsByHash([
         ...acceptedFromCandidates,
-        ...acceptedFromProcessEvents,
+        ...acceptedDeferredOperations,
     ]);
 }

@@ -1122,7 +1122,7 @@ describe('processEvents', () => {
         expect(assetDoc3.didDocumentMetadata!.confirmed).toBe(true);
     });
 
-    it('should return accepted deferred asset creates in processEvents', async () => {
+    it('should export accepted deferred asset creates by signature hash', async () => {
         const controllerKeys = cipher.generateRandomJwk();
         const controllerCreate = await helper.createAgentOp(controllerKeys, { version: 1, registry: 'TFTC' });
         const controllerDid = await gatekeeper.createDID(controllerCreate);
@@ -1140,7 +1140,6 @@ describe('processEvents', () => {
         }]);
         const first = await gatekeeper.processEvents();
         expect(first.acceptedHashes).toStrictEqual([]);
-        expect(first.acceptedEvents).toStrictEqual([]);
 
         await gatekeeper.importBatch([{
             registry: 'hyperswarm',
@@ -1153,12 +1152,17 @@ describe('processEvents', () => {
             controllerCreate.signature!.hash.toLowerCase(),
             assetCreate.signature!.hash.toLowerCase(),
         ]));
-        const acceptedEventHashes = (second.acceptedEvents ?? [])
+
+        const exported = await gatekeeper.exportEventsByHashes([
+            controllerCreate.signature!.hash,
+            assetCreate.signature!.hash,
+        ]);
+        const exportedHashes = exported
             .map(event => event.operation.signature?.hash?.toLowerCase())
             .filter((hash): hash is string => !!hash)
             .sort();
 
-        expect(acceptedEventHashes).toStrictEqual([
+        expect(exportedHashes).toStrictEqual([
             assetCreate.signature!.hash.toLowerCase(),
             controllerCreate.signature!.hash.toLowerCase(),
         ].sort());
