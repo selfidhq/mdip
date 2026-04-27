@@ -10,7 +10,7 @@ import { EventEmitter } from 'events';
 import GatekeeperClient from '@mdip/gatekeeper/client';
 import KeymasterClient from '@mdip/keymaster/client';
 import KuboClient from '@mdip/ipfs/kubo';
-import { Operation } from '@mdip/gatekeeper/types';
+import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import CipherNode from '@mdip/cipher/node';
 import { childLogger } from '@mdip/common/logger';
 import config from './config.js';
@@ -2212,10 +2212,10 @@ async function mergeBatch(batch: Operation[]): Promise<void> {
     syncStats.opsApplied += (response.added ?? 0) + (response.merged ?? 0);
     syncStats.opsRejected += response.rejected ?? 0;
 
-    const acceptedToPersist = await resolveAcceptedOperationsToPersist(
+    const acceptedToPersist = resolveAcceptedOperationsToPersist(
         acceptedCandidates,
         response.acceptedHashes,
-        gatekeeper,
+        response.acceptedEvents,
     );
     await persistAcceptedOperations(acceptedToPersist, 'mergeBatch');
 }
