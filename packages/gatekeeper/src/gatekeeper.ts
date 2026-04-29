@@ -99,6 +99,12 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
     }
 
+    private clearEventsSeen(): void {
+        for (const key of Object.keys(this.eventsSeen)) {
+            delete this.eventsSeen[key];
+        }
+    }
+
     private async withDidLock<T>(did: string, fn: () => Promise<T>): Promise<T> {
         const prev = this.didLocks.get(did) ?? Promise.resolve();
         let release: () => void = () => { };
