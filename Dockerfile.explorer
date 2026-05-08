@@ -21,10 +21,8 @@ WORKDIR /app/explorer
 
 # Set VITE env to use relative API path
 ARG VITE_EXPLORER_PORT=4000
-ARG VITE_GATEKEEPER_URL=/api
 ARG VITE_SEARCH_SERVER=/search-api
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
-ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
 ENV VITE_SEARCH_SERVER=http://search-clusterip.development.svc.cluster.local:4002
 
 RUN npm i
