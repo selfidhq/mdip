@@ -23,7 +23,6 @@ WORKDIR /app/explorer
 ARG VITE_EXPLORER_PORT=4000
 ARG VITE_SEARCH_SERVER=/search-api
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
-ENV VITE_SEARCH_SERVER=http://search-clusterip.development.svc.cluster.local:4002
 
 RUN npm i
 RUN npm run build
