@@ -20,9 +20,9 @@ RUN npm rebuild sqlite3
 RUN npm run build
 
 # Make sure dir is owned by user who will build
-RUN chown -R node:node /app/search-server
+RUN chown -R ops:ops /app/search-server
 
-# Switch to node user
+# Switch to ops user
 USER ops
 
 WORKDIR /app/search-server
