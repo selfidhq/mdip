@@ -59,63 +59,6 @@ function parseCsv(value) {
 
 const configuredSkipPaths = parseCsv(process.env.KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS);
 
-const DEFAULT_RATE_LIMIT_SKIP_PATHS = ['/api/v1/ready'];
-
-function parseBoolean(value, defaultValue) {
-    if (value === undefined) {
-        return defaultValue;
-    }
-
-    const normalized = value.trim().toLowerCase();
-
-    if (normalized === 'true') {
-        return true;
-    }
-
-    if (normalized === 'false') {
-        return false;
-    }
-
-    return defaultValue;
-}
-
-function parsePositiveInteger(value, defaultValue) {
-    const parsed = Number.parseInt(value ?? '', 10);
-
-    if (Number.isInteger(parsed) && parsed > 0) {
-        return parsed;
-    }
-
-    return defaultValue;
-}
-
-function parseWindowUnit(value) {
-    const normalized = (value ?? '').trim().toLowerCase();
-
-    if (normalized === 'second' || normalized === 'seconds') {
-        return 'second';
-    }
-
-    if (normalized === 'hour' || normalized === 'hours') {
-        return 'hour';
-    }
-
-    return 'minute';
-}
-
-function parseCsv(value) {
-    if (!value) {
-        return [];
-    }
-
-    return value
-        .split(',')
-        .map(item => item.trim())
-        .filter(Boolean);
-}
-
-const configuredSkipPaths = parseCsv(process.env.KC_GATEKEEPER_RATE_LIMIT_SKIP_PATHS);
-
 const config = {
     port: process.env.KC_GATEKEEPER_PORT ? parseInt(process.env.KC_GATEKEEPER_PORT) : 4224,
     db: process.env.KC_GATEKEEPER_DB || 'redis',

@@ -693,12 +693,12 @@ describe('processEvents', () => {
     it('should return process status', async () => {
         nock(GatekeeperURL)
             .post(Endpoints.events.process)
-            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+            .reply(200, { added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
 
         const gatekeeper = await GatekeeperClient.create({ url: GatekeeperURL });
         const status = await gatekeeper.processEvents();
 
-        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [] });
+        expect(status).toStrictEqual({ added: 0, merged: 0, pending: 0, acceptedHashes: [], acceptedEvents: [] });
     });
 
     it('should throw exception on processEvents server error', async () => {

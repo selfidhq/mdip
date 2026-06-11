@@ -35,6 +35,7 @@ const config = {
         '^\\.\\/db\\/typeGuards\\.js$': '<rootDir>/packages/keymaster/src/db/typeGuards.ts',
         '^\\.\\/sync-mapping\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-mapping.ts',
         '^\\.\\/sync-persistence\\.js$': '<rootDir>/services/mediators/hyperswarm/src/sync-persistence.ts',
+        '^\\.\\/windows\\.js$': '<rootDir>/services/mediators/hyperswarm/src/negentropy/windows.ts',
         '^\\.\\/abstract-json\\.js$': '<rootDir>/packages/gatekeeper/src/db/abstract-json.ts',
         '^\\.\\/db-utils\\.js$': '<rootDir>/services/search-server/src/db/db-utils.ts',
         '^\\.\\/did-resolver\\.js$': '<rootDir>/packages/gatekeeper/src/did-resolver.ts',
@@ -53,6 +54,11 @@ const config = {
     ],
     coveragePathIgnorePatterns: [
         "/node_modules/",
+        "/tests/",
+        "/packages/gatekeeper/src/db/mongo\\.ts$",
+        "/packages/gatekeeper/src/db/postgres\\.ts$",
+        "/packages/gatekeeper/src/db/redis\\.ts$",
+        "/packages/gatekeeper/src/db/sqlite\\.ts$",
         "/services/mediators/hyperswarm/src/negentropy/Negentropy\\.cjs$",
     ]
 };
