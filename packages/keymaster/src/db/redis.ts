@@ -1,8 +1,7 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 import { Redis } from 'ioredis';
 
-export default class WalletRedis extends AbstractBase {
+export default class WalletRedis implements WalletBase {
     private static instance: WalletRedis | null = null;
     private static instanceCount = 0;
     
@@ -37,7 +36,6 @@ export default class WalletRedis extends AbstractBase {
     }
 
     constructor(walletKey: string = 'wallet') {
-        super();
         this.instanceId = ++WalletRedis.instanceCount;
         
         console.log(`🔵 Constructing WalletRedis instance #${this.instanceId}`);
@@ -51,7 +49,7 @@ export default class WalletRedis extends AbstractBase {
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
 
-        // Standalone fallback from file 3
+        // Standalone alternative fallback configuration
         this.standaloneUrl = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         
         this.walletKey = walletKey;
@@ -63,12 +61,12 @@ export default class WalletRedis extends AbstractBase {
             { host: sentinelHost0!, port: sentinelPort },
             { host: sentinelHost1!, port: sentinelPort },
             { host: sentinelHost2!, port: sentinelPort }
-        ].filter(s => s.host); // Keep only valid defined sentinel hosts
+        ].filter(s => s.host); // Filter out unconfigured or empty hosts
 
         // DETAILED LOGGING
         console.log('=== Redis Connection Debug ===');
         if (this.sentinelHosts.length > 0) {
-            console.log('Mode: Sentinel');
+            console.log('Mode: Sentinel Cluster');
             console.log('Sentinel Hosts:', this.sentinelHosts.map(s => s.host));
             console.log('Master Name:', masterName);
         } else {
@@ -103,8 +101,8 @@ export default class WalletRedis extends AbstractBase {
             await this.disconnect();
         }
 
-        // Shared resilience strategies & behaviors
-        const sharedConfig = {
+        // Configuration behaviors shared between both connection patterns
+        const clientOptions = {
             password: this.password,
             connectTimeout: 30000,
             commandTimeout: 10000,
@@ -135,9 +133,8 @@ export default class WalletRedis extends AbstractBase {
         };
 
         if (this.sentinelHosts.length > 0) {
-            // Initialize with Sentinel mode configuration
             this.redis = new Redis({
-                ...sharedConfig,
+                ...clientOptions,
                 sentinels: this.sentinelHosts,
                 name: this.masterName,
                 sentinelMaxConnections: 1,
@@ -153,11 +150,10 @@ export default class WalletRedis extends AbstractBase {
                 },
             });
         } else {
-            // Initialize with Standalone URL mode fallback
-            this.redis = new Redis(this.standaloneUrl, sharedConfig);
+            this.redis = new Redis(this.standaloneUrl, clientOptions);
         }
 
-        // Event listeners with more detailed logging
+        // Event listeners with detailed logging metrics
         this.redis.on('connect', () => {
             console.log(`✅ [Instance #${this.instanceId}] Connected to Redis`);
         });
@@ -175,7 +171,6 @@ export default class WalletRedis extends AbstractBase {
         this.redis.on('close', () => {
             console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
             console.trace('Connection close stack trace:');
-            // Stop keepalive when connection closes
             this.stopKeepalive();
         });
 
@@ -203,7 +198,7 @@ export default class WalletRedis extends AbstractBase {
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => {
                 reject(new Error('Redis connection timeout'));
-            }, 10000); // 10 second timeout
+            }, 10000);
 
             this.redis!.once('ready', () => {
                 clearTimeout(timeout);
@@ -220,14 +215,12 @@ export default class WalletRedis extends AbstractBase {
     async disconnect() {
         console.log(`🔴 disconnect() called on instance #${this.instanceId}`);
         
-        // Stop keepalive
         this.stopKeepalive();
         
         if (this.redis) {
             await this.redis.quit();
             this.redis = null;
         }
-        // Clear singleton reference if this is the singleton instance
         if (WalletRedis.instance === this) {
             WalletRedis.instance = null;
         }
@@ -236,7 +229,7 @@ export default class WalletRedis extends AbstractBase {
     private startKeepalive() {
         this.stopKeepalive();
         
-        // Send PING every 30 seconds to keep connection alive
+        // Send PING every 30 seconds to bypass proxy and infrastructure idle limits
         this.keepaliveInterval = setInterval(async () => {
             if (this.redis && this.redis.status === 'ready') {
                 try {
