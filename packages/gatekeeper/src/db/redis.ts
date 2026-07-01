@@ -37,17 +37,69 @@ export default class DbRedis implements GatekeeperDb {
     }
 
     async start(): Promise<void> {
-<<<<<<< HEAD
-    const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
-    const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
-    const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
-    const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
-    const masterName = process.env.KC_REDIS_MASTER_NAME;
-    const password = process.env.KC_REDIS_PASSWORD;
-    //const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
-=======
-        const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
-        this.redis = new Redis(url);
+        const sentinelHost0 = process.env.KC_REDIS_SENTINEL_HOST_0;
+        const sentinelHost1 = process.env.KC_REDIS_SENTINEL_HOST_1;
+        const sentinelHost2 = process.env.KC_REDIS_SENTINEL_HOST_2;
+
+        if (sentinelHost0 || sentinelHost1 || sentinelHost2) {
+            // --- Redis Sentinel Mode Configuration ---
+            const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
+            const masterName = process.env.KC_REDIS_MASTER_NAME;
+            const password = process.env.KC_REDIS_PASSWORD;
+
+            // DETAILED LOGGING
+            console.log('=== Sentinel Connection Debug ===');
+            console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
+            console.log('Redis Password exists:', !!password);
+            console.log('=================================');
+
+            const config = {
+                sentinels: [
+                    { host: sentinelHost0, port: sentinelPort },
+                    { host: sentinelHost1, port: sentinelPort },
+                    { host: sentinelHost2, port: sentinelPort }
+                ].filter(sentinel => sentinel.host), // Filter out empty or unconfigured entries
+                name: masterName,
+                password: password,
+                sentinelRetryStrategy: (times: number) => {
+                    console.log(`Sentinel retry attempt ${times}`);
+                    const delay = Math.min(times * 50, 2000);
+                    return delay;
+                },
+                retryStrategy: (times: number) => {
+                    console.log(`Redis retry attempt ${times}`);
+                    const delay = Math.min(times * 50, 2000);
+                    return delay;
+                },
+                enableReadyCheck: true,
+                maxRetriesPerRequest: 3,
+            };
+
+            this.redis = new Redis(config);
+
+            // Sentinel and client operational lifecycle monitoring listeners
+            this.redis.on('connect', () => {
+                console.log('Connected to Redis');
+            });
+
+            this.redis.on('ready', () => {
+                console.log('Redis connection ready');
+            });
+
+            this.redis.on('+switch-master', (data) => {
+                console.log('Redis master switched:', data);
+            });
+            
+            this.redis.on('+sentinel', (data) => {
+                console.log('Sentinel event:', data);
+            });
+        } else {
+            // --- Standalone Fallback Configuration Mode ---
+            const url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
+            this.redis = new Redis(url);
+        }
+
+        // Primary centralized connection logging configuration mapping
         this.redis.on('error', error => this.logRedisConnectionError(error));
 
         try {
@@ -64,68 +116,16 @@ export default class DbRedis implements GatekeeperDb {
             }
             finally {
                 this.redis.removeAllListeners('error');
+                this.redis.removeAllListeners('connect');
+                this.redis.removeAllListeners('ready');
+                this.redis.removeAllListeners('+switch-master');
+                this.redis.removeAllListeners('+sentinel');
             }
             this.redis = null;
             throw error;
         }
     }
->>>>>>> origin/main
 
-    // DETAILED LOGGING
-    console.log('=== Sentinel Connection Debug ===');
-    console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
-    console.log('Redis Password exists:', !!password);
-    //console.log('Sentinel Password exists:', !!sentinelPassword);
-    console.log('=================================');
-
-    const config = {
-        sentinels: [
-            { host: sentinelHost0, port: sentinelPort },
-            { host: sentinelHost1, port: sentinelPort },
-            { host: sentinelHost2, port: sentinelPort }
-        ],
-        name: masterName,
-        password: password,
-        //sentinelPassword: sentinelPassword,
-        sentinelRetryStrategy: (times: number) => {
-            console.log(`Sentinel retry attempt ${times}`);
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-        },
-        retryStrategy: (times: number) => {
-            console.log(`Redis retry attempt ${times}`);
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-        },
-        enableReadyCheck: true,
-        maxRetriesPerRequest: 3,
-    };
-
-    
-    this.redis = new Redis(config);
-
-    this.redis.on('connect', () => {
-        console.log('Connected to Redis');
-    });
-
-    this.redis.on('ready', () => {
-        console.log('Redis connection ready');
-    });
-
-    this.redis.on('error', (err) => {
-        console.error('Redis connection error:', err);
-        console.error('Error name:', err.name);
-        console.error('Error message:', err.message);
-    });
-
-    this.redis.on('+switch-master', (data) => {
-        console.log('Redis master switched:', data);
-    });
-    
-    this.redis.on('+sentinel', (data) => {
-        console.log('Sentinel event:', data);
-    });
-}
     async stop(): Promise<void> {
         if (this.redis) {
             const redis = this.redis;
@@ -135,6 +135,10 @@ export default class DbRedis implements GatekeeperDb {
             }
             finally {
                 redis.removeAllListeners('error');
+                redis.removeAllListeners('connect');
+                redis.removeAllListeners('ready');
+                redis.removeAllListeners('+switch-master');
+                redis.removeAllListeners('+sentinel');
             }
         }
     }
@@ -159,7 +163,13 @@ export default class DbRedis implements GatekeeperDb {
         }
     }
 
-    private logRedisConnectionError(error: unknown): void {
+    private logRedisConnectionError(error: any): void {
+        // Detailed console tracking output outputs
+        console.error('Redis connection error:', error);
+        if (error?.name) console.error('Error name:', error.name);
+        if (error?.message) console.error('Error message:', error.message);
+
+        // Throttled production logging system context output
         const now = Date.now();
         if (now - this.lastRedisErrorLogAt < 60_000) {
             return;
@@ -177,16 +187,14 @@ export default class DbRedis implements GatekeeperDb {
         let cursor = '0';
         let totalDeleted = 0;
         do {
-            // Scan for keys that match the pattern
             const [newCursor, keys] = await this.redis.scan(cursor, 'MATCH', `${this.dbName}/*`, 'COUNT', 1000);
             cursor = newCursor;
 
             if (keys.length > 0) {
-                // Delete the keys found
                 const deletedCount = await this.redis.del(...keys);
-                totalDeleted += deletedCount; // Increment the total count
+                totalDeleted += deletedCount;
             }
-        } while (cursor !== '0'); // Continue scanning until cursor returns to 0
+        } while (cursor !== '0');
 
         await this.redis.set(this.indexEpochKey(), randomUUID());
 
@@ -701,7 +709,6 @@ export default class DbRedis implements GatekeeperDb {
             let blockHash: string | null;
 
             if (blockId === undefined) {
-                // No blockId provided → get latest by max height
                 const maxHeightStr = await this.redis.get(this.maxHeightKey(registry));
                 if (!maxHeightStr) return null;
                 blockId = parseInt(maxHeightStr);

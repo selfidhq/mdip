@@ -1,20 +1,17 @@
-import { StoredWallet, WalletBase } from '../types.js';
-import { Redis } from 'ioredis'
+import { StoredWallet } from '../types.js';
+import { AbstractBase } from './abstract-base.js';
+import { Redis } from 'ioredis';
 
-<<<<<<< HEAD
 export default class WalletRedis extends AbstractBase {
     private static instance: WalletRedis | null = null;
     private static instanceCount = 0;
     
-=======
-export default class WalletRedis implements WalletBase {
->>>>>>> origin/main
     private readonly walletKey: string;
     private readonly masterName: string;
     private readonly sentinelPort: number;
     private readonly sentinelHosts: Array<{host: string, port: number}>;
     private readonly password?: string;
-    //private readonly sentinelPassword?: string;
+    private readonly standaloneUrl: string;
     private redis: Redis | null = null;
     private readonly instanceId: number;
     private keepaliveInterval: NodeJS.Timeout | null = null;
@@ -40,7 +37,6 @@ export default class WalletRedis implements WalletBase {
     }
 
     constructor(walletKey: string = 'wallet') {
-<<<<<<< HEAD
         super();
         this.instanceId = ++WalletRedis.instanceCount;
         
@@ -54,38 +50,44 @@ export default class WalletRedis implements WalletBase {
         const sentinelPort = parseInt(process.env.KC_REDIS_SENTINEL_PORT || '26379');
         const masterName = process.env.KC_REDIS_MASTER_NAME || 'mymaster';
         const password = process.env.KC_REDIS_PASSWORD;
-        //const sentinelPassword = process.env.KC_REDIS_SENTINEL_PASSWORD;
 
-        // DETAILED LOGGING
-        console.log('=== Sentinel Connection Debug ===');
-        console.log('Sentinel Hosts:', [sentinelHost0, sentinelHost1, sentinelHost2]);
-        console.log('Master Name:', masterName);
-        console.log('Redis Password exists:', !!password);
-        //console.log('Sentinel Password exists:', !sentinelPassword);
-        console.log('=================================');
+        // Standalone fallback from file 3
+        this.standaloneUrl = process.env.KC_REDIS_URL || 'redis://localhost:6379';
         
-=======
-        this.url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
->>>>>>> origin/main
         this.walletKey = walletKey;
         this.masterName = masterName;
         this.sentinelPort = sentinelPort;
         this.password = password;
-        //this.sentinelPassword = sentinelPassword;
+        
         this.sentinelHosts = [
             { host: sentinelHost0!, port: sentinelPort },
             { host: sentinelHost1!, port: sentinelPort },
             { host: sentinelHost2!, port: sentinelPort }
-        ];
+        ].filter(s => s.host); // Keep only valid defined sentinel hosts
+
+        // DETAILED LOGGING
+        console.log('=== Redis Connection Debug ===');
+        if (this.sentinelHosts.length > 0) {
+            console.log('Mode: Sentinel');
+            console.log('Sentinel Hosts:', this.sentinelHosts.map(s => s.host));
+            console.log('Master Name:', masterName);
+        } else {
+            console.log('Mode: Standalone Fallback');
+            console.log('URL:', this.standaloneUrl);
+        }
+        console.log('Redis Password exists:', !!password);
+        console.log('=================================');
     }
 
     // Getter that dynamically returns the current connection info
     get url(): string {
-        if (this.redis && this.redis.options && this.redis.options.sentinels) {
+        if (this.redis && this.redis.options && this.redis.options.sentinels && this.redis.options.sentinels.length > 0) {
             const currentSentinel = this.redis.options.sentinels[0];
             return `sentinel://${currentSentinel.host}:${currentSentinel.port}/${this.masterName}`;
         }
-        return `sentinel://unknown:${this.sentinelPort}/${this.masterName}`;
+        return this.sentinelHosts.length > 0 
+            ? `sentinel://unknown:${this.sentinelPort}/${this.masterName}`
+            : this.standaloneUrl;
     }
 
     async connect(): Promise<void> {
@@ -101,21 +103,20 @@ export default class WalletRedis implements WalletBase {
             await this.disconnect();
         }
 
-        this.redis = new Redis({
-            sentinels: this.sentinelHosts,
-            name: this.masterName,
+        // Shared resilience strategies & behaviors
+        const sharedConfig = {
             password: this.password,
-            //sentinelPassword: this.sentinelPassword,
-            sentinelRetryStrategy: (times) => {
-                if (times > 5) {
-                    console.error(`❌ Max sentinel retry attempts (${times}) reached - stopping retries`);
-                    return null;
-                }
-                const delay = times * 5000;
-                console.log(`⏳ Sentinel retry ${times} in ${delay}ms`);
-                return delay;
-            },
-            retryStrategy: (times) => {
+            connectTimeout: 30000,
+            commandTimeout: 10000,
+            keepAlive: 5000,
+            noDelay: true,
+            enableReadyCheck: true,
+            autoResubscribe: false,
+            autoResendUnfulfilledCommands: false,
+            maxRetriesPerRequest: 3,
+            enableOfflineQueue: true,
+            lazyConnect: false,
+            retryStrategy: (times: number) => {
                 if (times > 5) {
                     console.error(`❌ Max redis retry attempts (${times}) reached - stopping retries`);
                     return null;
@@ -124,44 +125,37 @@ export default class WalletRedis implements WalletBase {
                 console.log(`⏳ Redis retry ${times} in ${delay}ms`);
                 return delay;
             },
-            
-            // Connection timeouts
-            connectTimeout: 30000,
-            commandTimeout: 10000,
-            
-            // CRITICAL: Keep connection alive
-            keepAlive: 5000,
-            noDelay: true,
-            
-            // Connection validation
-            enableReadyCheck: true,
-            
-            // Disable auto behaviors that could cause reconnections
-            autoResubscribe: false,
-            autoResendUnfulfilledCommands: false,
-            
-            // Only reconnect on READONLY errors (failover)
-            reconnectOnError: (err) => {
+            reconnectOnError: (err: Error) => {
                 console.error('🔴 Redis error, evaluating reconnect:', err.message);
-                const targetError = 'READONLY';
-                if (err.message.includes(targetError)) {
+                if (err.message.includes('READONLY')) {
                     return true;
                 }
                 return false;
             },
-            
-            // Connection pool settings
-            maxRetriesPerRequest: 3,
-            enableOfflineQueue: true,
-            
-            // Only use one connection to sentinel at a time
-            sentinelMaxConnections: 1,
-            
-            // CRITICAL: Prefer connecting to sentinels in order, don't randomize
-            sentinelCommandTimeout: 10000,
-            
-            lazyConnect: false,
-        });
+        };
+
+        if (this.sentinelHosts.length > 0) {
+            // Initialize with Sentinel mode configuration
+            this.redis = new Redis({
+                ...sharedConfig,
+                sentinels: this.sentinelHosts,
+                name: this.masterName,
+                sentinelMaxConnections: 1,
+                sentinelCommandTimeout: 10000,
+                sentinelRetryStrategy: (times: number) => {
+                    if (times > 5) {
+                        console.error(`❌ Max sentinel retry attempts (${times}) reached - stopping retries`);
+                        return null;
+                    }
+                    const delay = times * 5000;
+                    console.log(`⏳ Sentinel retry ${times} in ${delay}ms`);
+                    return delay;
+                },
+            });
+        } else {
+            // Initialize with Standalone URL mode fallback
+            this.redis = new Redis(this.standaloneUrl, sharedConfig);
+        }
 
         // Event listeners with more detailed logging
         this.redis.on('connect', () => {
@@ -170,7 +164,6 @@ export default class WalletRedis implements WalletBase {
 
         this.redis.on('ready', () => {
             console.log(`🟢 [Instance #${this.instanceId}] Redis connection ready`);
-            
             // Start keepalive pings to prevent idle timeout
             this.startKeepalive();
         });
@@ -181,9 +174,7 @@ export default class WalletRedis implements WalletBase {
 
         this.redis.on('close', () => {
             console.warn(`🔌 [Instance #${this.instanceId}] Redis connection closed`);
-            // Try to log the stack trace to see what's closing the connection
             console.trace('Connection close stack trace:');
-            
             // Stop keepalive when connection closes
             this.stopKeepalive();
         });
@@ -243,11 +234,9 @@ export default class WalletRedis implements WalletBase {
     }
 
     private startKeepalive() {
-        // Stop any existing keepalive
         this.stopKeepalive();
         
-        // Send PING every 30 seconds (well under the 300s timeout)
-        // This keeps the connection from being considered idle
+        // Send PING every 30 seconds to keep connection alive
         this.keepaliveInterval = setInterval(async () => {
             if (this.redis && this.redis.status === 'ready') {
                 try {
@@ -257,7 +246,7 @@ export default class WalletRedis implements WalletBase {
                     console.error(`❌ [Instance #${this.instanceId}] Keepalive ping failed:`, error.message);
                 }
             }
-        }, 30000); // Every 30 seconds (well under 300s timeout)
+        }, 30000);
         
         console.log(`💓 [Instance #${this.instanceId}] Keepalive started (30s interval)`);
     }
@@ -284,7 +273,7 @@ export default class WalletRedis implements WalletBase {
         return true;
     }
 
-    async loadWallet(): Promise<StoredWallet> {
+    async loadWallet(): Promise<StoredWallet | null> {
         if (!this.redis) {
             throw new Error('Redis is not connected. Call connect() first or use WalletRedis.create().');
         }
