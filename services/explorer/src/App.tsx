@@ -8,25 +8,10 @@ import {
     Typography,
 } from "@mui/material";
 import Header from "./components/Header.js";
-<<<<<<< HEAD
-import { GatekeeperEvent } from "@mdip/gatekeeper/types";
-import { Routes, Route, useNavigate, Navigate } from 'react-router-dom';
-
-const gatekeeper = new GatekeeperClient();
-
-interface SnackbarState {
-    open: boolean;
-    message: string;
-    severity: AlertColor;
-}
-
-const gatekeeperUrl = import.meta.env.VITE_GATEKEEPER_URL || '/api';
-=======
 import { Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import type { GatekeeperEvent } from "@mdip/gatekeeper/types";
 import { useSnackbar } from "./contexts/SnackbarProvider.js";
 import { useExplorerContext } from "./contexts/ExplorerProvider.js";
->>>>>>> origin/main
 
 function App() {
     const { setError } = useSnackbar();
