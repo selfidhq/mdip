@@ -12,9 +12,13 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/ ./packages/
 
+ARG VITE_EXPLORER_PORT
+ARG VITE_GATEKEEPER_URL
+ARG VITE_SEARCH_SERVER
+
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
 ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
-ENV VITE_SEARCH_SERVER=http://search-clusterip.development.svc.cluster.local:4002
+ENV VITE_SEARCH_SERVER=http://development-search.mastodon-bushi.ts.net:4002
 
 RUN npm ci
 RUN npm run build
