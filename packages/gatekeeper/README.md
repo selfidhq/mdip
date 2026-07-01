@@ -17,8 +17,11 @@ The library must be configured by calling the start function with one of the sup
 - JSON - @mdip/gatekeeper/db/json
 - JSON with memory cache - @mdip/gatekeeper/db/json-cache
 - sqlite - @mdip/gatekeeper/db/sqlite
-- mongodb - @mdip/gatekeeper/db/mongodb
+- mongodb - @mdip/gatekeeper/db/mongo
 - redis - @mdip/gatekeeper/db/redis
+- postgres - @mdip/gatekeeper/db/postgres
+
+The MongoDB adapter requires a replica set or sharded cluster because DID/block writes and index cursor writes are committed in MongoDB transactions. For local Docker Compose usage, the repository starts MongoDB as a single-node replica set named `rs0`; standalone MongoDB deployments must be updated before using the adapter.
 
 ```js
 // Import using subpaths

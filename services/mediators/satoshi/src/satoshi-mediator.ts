@@ -5,6 +5,7 @@ import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
+import JsonPostgres from './db/postgres.js';
 import config from './config.js';
 import { isValidDID } from '@mdip/ipfs/utils';
 import { MediatorDb, MediatorDbInterface, DiscoveredItem, BlockVerbosity } from './types.js';
@@ -476,7 +477,9 @@ async function anchorBatch(): Promise<void> {
             if (ok) {
                 const blockCount = await btcClient.getBlockCount();
                 await jsonPersister.updateDb(async (db) => {
-                    (db.registered ??= []).push({
+                    const registered = db.registered ?? [];
+                    db.registered = registered;
+                    registered.push({
                         did,
                         txid: txid!
                     });
@@ -545,7 +548,7 @@ async function waitForChain() {
             const blockchainInfo = await btcClient.getBlockchainInfo();
             log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
-        } catch (error) {
+        } catch {
             log.debug(`Waiting for ${config.chain} node...`);
         }
 
@@ -629,6 +632,9 @@ async function main() {
     }
     else if (config.db === 'sqlite') {
         jsonPersister = await JsonSQLite.create(REGISTRY);
+    }
+    else if (config.db === 'postgres') {
+        jsonPersister = await JsonPostgres.create(REGISTRY);
     }
     else {
         jsonPersister = jsonFile;

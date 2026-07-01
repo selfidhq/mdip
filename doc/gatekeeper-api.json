@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Gatekeeper API",
-    "version": "1.4.0-beta",
+    "version": "2.0.0",
     "description": "Documentation for Keymaster API"
   },
   "paths": {
@@ -978,6 +978,178 @@
         }
       }
     },
+    "/index/export": {
+      "post": {
+        "summary": "Export a paginated DID index snapshot or incremental change batch.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "snapshot",
+                      "changes"
+                    ]
+                  },
+                  "cursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Opaque snapshot cursor or incremental change cursor."
+                  },
+                  "checkpointCursor": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "includeOperations": {
+                    "type": "boolean",
+                    "description": "Changes-only. Include event-level operation records for consumers that need replay order."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Index export page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "indexEpoch",
+                        "cursor",
+                        "checkpointCursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "snapshot"
+                          ]
+                        },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Opaque snapshot page cursor. Clients must store and pass it back without interpretation."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Snapshot high-water change cursor returned on every snapshot page."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mode",
+                        "indexEpoch",
+                        "cursor",
+                        "checkpointCursor",
+                        "hasMore",
+                        "dids",
+                        "blocks"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "changes"
+                          ]
+                        },
+                        "indexEpoch": {
+                          "type": "string",
+                          "description": "Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced."
+                        },
+                        "cursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Incremental change cursor."
+                        },
+                        "checkpointCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Change high-water cursor returned with the page."
+                        },
+                        "hasMore": {
+                          "type": "boolean"
+                        },
+                        "dids": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "blocks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "operations": {
+                          "type": "array",
+                          "description": "Optional ordered operation records. Returned only when includeOperations is true.",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body."
+          },
+          "500": {
+            "description": "Internal Server Error."
+          },
+          "503": {
+            "description": "Gatekeeper database is unavailable."
+          }
+        }
+      }
+    },
     "/dids/remove": {
       "post": {
         "summary": "Remove one or more DIDs",
@@ -1217,6 +1389,13 @@
                       "type": "integer",
                       "description": "Number of events that failed validation (bad signature, size limit, etc.)."
                     },
+                    "rejectedIndices": {
+                      "type": "array",
+                      "description": "Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
                     "total": {
                       "type": "integer",
                       "description": "Total number of events in the queue after this import."
@@ -1438,6 +1617,13 @@
                     "rejected": {
                       "type": "integer",
                       "description": "Number of events that failed validation."
+                    },
+                    "rejectedIndices": {
+                      "type": "array",
+                      "description": "Zero-based indexes of rejected events in the original submitted batch order.",
+                      "items": {
+                        "type": "integer"
+                      }
                     },
                     "total": {
                       "type": "integer",
@@ -1786,6 +1972,13 @@
                         "pending": {
                           "type": "integer",
                           "description": "Number of events still left in the queue after processing."
+                        },
+                        "acceptedHashes": {
+                          "type": "array",
+                          "description": "Lower-case signature hashes of events accepted during this processing run (added or merged).",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }

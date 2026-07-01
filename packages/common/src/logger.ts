@@ -1,4 +1,5 @@
 import pino, { type Logger, type LoggerOptions, type ChildLoggerOptions } from 'pino';
+import pinoPretty from 'pino-pretty';
 
 export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 export type LoggerLike = Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>;
@@ -65,7 +66,12 @@ function normalizeLevel(level?: string): LogLevel {
 
 type Env = Record<string, string | undefined>;
 
-export function getLogLevel(env: Env = process.env): LogLevel {
+function resolveEnv(): Env {
+    const maybeProcess = (globalThis as { process?: { env?: Env } }).process;
+    return maybeProcess?.env ?? {};
+}
+
+export function getLogLevel(env: Env = resolveEnv()): LogLevel {
     return normalizeLevel(env.KC_LOG_LEVEL);
 }
 
@@ -75,26 +81,27 @@ export function getPrettyEnabled(): boolean {
 
 export function createLogger(
     options: LoggerOptions = {},
-    env: Env = process.env,
+    env: Env = resolveEnv(),
 ): Logger {
     const resolvedLevel = options.level ?? getLogLevel(env);
-    const transport = options.transport ?? {
-        target: 'pino-pretty',
-        options: {
-            colorize: false,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname,service',
-            singleLine: true,
-        },
-    };
 
     const loggerOptions: LoggerOptions = {
         ...options,
         level: resolvedLevel,
-        transport,
     };
 
-    return pino(loggerOptions);
+    if (options.transport !== undefined && options.transport !== null) {
+        return pino(loggerOptions);
+    }
+
+    const stream = pinoPretty({
+        colorize: false,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname,service',
+        singleLine: true,
+    });
+
+    return pino(loggerOptions, stream);
 }
 
 export let logger = createLogger();

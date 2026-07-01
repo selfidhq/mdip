@@ -1,10 +1,10 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+import { loadEnv } from '@mdip/common/env';
 import { childLogger } from '@mdip/common/logger';
 
-dotenv.config();
+loadEnv();
 const log = childLogger({ service: 'explorer-server' });
 import axios from 'axios';
 
@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 4000;
 const GATEKEEPER_URL = process.env.GATEKEEPER_URL || 'http://gatekeeper-clusterip.development.svc.cluster.local:4224';
 const SEARCH_SERVER_URL = process.env.SEARCH_SERVER_URL || 'http://localhost:4002';
 
+<<<<<<< HEAD
 console.log(`Gatekeeper URL: ${GATEKEEPER_URL}`);
 console.log(`Search Server URL: ${SEARCH_SERVER_URL}`);
 
@@ -85,6 +86,9 @@ app.use(/^\/search-api\/.*/, async (req, res) => {
 });
 
 // Serve static files
+=======
+app.disable('x-powered-by');
+>>>>>>> origin/main
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Handle client-side routing

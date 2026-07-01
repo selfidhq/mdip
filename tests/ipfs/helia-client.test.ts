@@ -1,6 +1,18 @@
 import mockFs from 'mock-fs';
+import cluster from 'node:cluster';
 import HeliaClient from '@mdip/ipfs/helia';
 import { ExpectedExceptionError } from '@mdip/common/errors';
+
+async function withMockBlockstore(testFn: () => Promise<void>) {
+    mockFs({});
+
+    try {
+        await testFn();
+    }
+    finally {
+        mockFs.restore();
+    }
+}
 
 describe('start', () => {
     it('should ignore a second call to start', async () => {
@@ -15,6 +27,32 @@ describe('stop', () => {
         const ipfs = await HeliaClient.create();
         await ipfs.stop();
         await ipfs.stop();
+    });
+
+    it('should clean up cluster message listeners added during start', async () => {
+        const before = cluster.listenerCount('message');
+        const ipfs = await HeliaClient.create({ cleanupGlobalListeners: true });
+
+        expect(cluster.listenerCount('message')).toBeGreaterThanOrEqual(before);
+
+        await ipfs.stop();
+
+        expect(cluster.listenerCount('message')).toBe(before);
+    });
+
+    it('should leave cluster message listeners alone when cleanup is disabled', async () => {
+        const listener = () => undefined;
+        cluster.on('message', listener);
+
+        try {
+            const ipfs = new HeliaClient({ cleanupGlobalListeners: false });
+            await ipfs.stop();
+
+            expect(cluster.listeners('message')).toContain(listener);
+        }
+        finally {
+            cluster.removeListener('message', listener);
+        }
     });
 });
 
@@ -38,13 +76,13 @@ describe('addJSON', () => {
     });
 
     it('should create CID from data with fs blockstore', async () => {
-        mockFs({});
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addJSON(data);
-        await ipfs.stop();
-        mockFs.restore();
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addJSON(data);
+            await ipfs.stop();
 
-        expect(cid).toBe(hash);
+            expect(cid).toBe(hash);
+        });
     });
 });
 
@@ -61,15 +99,14 @@ describe('getJSON', () => {
     });
 
     it('should return JSON data from CID with fs blockstore', async () => {
-        mockFs({});
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addJSON(mockData);
+            const data = await ipfs.getJSON(cid);
+            await ipfs.stop();
 
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addJSON(mockData);
-        const data = await ipfs.getJSON(cid);
-        await ipfs.stop();
-        mockFs.restore();
-
-        expect(data).toStrictEqual(mockData);
+            expect(data).toStrictEqual(mockData);
+        });
     });
 
     // eslint-disable-next-line
@@ -108,13 +145,13 @@ describe('addText', () => {
     });
 
     it('should create CID from text data with fs blockstore', async () => {
-        mockFs({});
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addText(mockData);
-        await ipfs.stop();
-        mockFs.restore();
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addText(mockData);
+            await ipfs.stop();
 
-        expect(cid).toBe(hash);
+            expect(cid).toBe(hash);
+        });
     });
 });
 
@@ -131,15 +168,14 @@ describe('getText', () => {
     });
 
     it('should return text data from CID with fs blockstore', async () => {
-        mockFs({});
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addText(mockData);
+            const data = await ipfs.getText(cid);
+            await ipfs.stop();
 
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addText(mockData);
-        const data = await ipfs.getText(cid);
-        await ipfs.stop();
-        mockFs.restore();
-
-        expect(data).toStrictEqual(mockData);
+            expect(data).toStrictEqual(mockData);
+        });
     });
 
     it('should return throw exception if not connected', async () => {
@@ -176,13 +212,13 @@ describe('addData', () => {
     });
 
     it('should create CID from text data with fs blockstore', async () => {
-        mockFs({});
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addData(mockData);
-        await ipfs.stop();
-        mockFs.restore();
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addData(mockData);
+            await ipfs.stop();
 
-        expect(cid).toBe(hash);
+            expect(cid).toBe(hash);
+        });
     });
 });
 
@@ -200,15 +236,14 @@ describe('getData', () => {
     });
 
     it('should return text data from CID with fs blockstore', async () => {
-        mockFs({});
+        await withMockBlockstore(async () => {
+            const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
+            const cid = await ipfs.addData(mockData);
+            const data = await ipfs.getData(cid);
+            await ipfs.stop();
 
-        const ipfs = await HeliaClient.create({ datadir: 'ipfs' });
-        const cid = await ipfs.addData(mockData);
-        const data = await ipfs.getData(cid);
-        await ipfs.stop();
-        mockFs.restore();
-
-        expect(data).toStrictEqual(mockData);
+            expect(data).toStrictEqual(mockData);
+        });
     });
 
     it('should return throw exception if not connected', async () => {

@@ -1,11 +1,14 @@
-import { StoredWallet } from '../types.js';
-import { AbstractBase } from './abstract-base.js';
+import { StoredWallet, WalletBase } from '../types.js';
 import { Redis } from 'ioredis'
 
+<<<<<<< HEAD
 export default class WalletRedis extends AbstractBase {
     private static instance: WalletRedis | null = null;
     private static instanceCount = 0;
     
+=======
+export default class WalletRedis implements WalletBase {
+>>>>>>> origin/main
     private readonly walletKey: string;
     private readonly masterName: string;
     private readonly sentinelPort: number;
@@ -37,6 +40,7 @@ export default class WalletRedis extends AbstractBase {
     }
 
     constructor(walletKey: string = 'wallet') {
+<<<<<<< HEAD
         super();
         this.instanceId = ++WalletRedis.instanceCount;
         
@@ -60,6 +64,9 @@ export default class WalletRedis extends AbstractBase {
         //console.log('Sentinel Password exists:', !sentinelPassword);
         console.log('=================================');
         
+=======
+        this.url = process.env.KC_REDIS_URL || 'redis://localhost:6379';
+>>>>>>> origin/main
         this.walletKey = walletKey;
         this.masterName = masterName;
         this.sentinelPort = sentinelPort;

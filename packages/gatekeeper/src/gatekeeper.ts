@@ -26,20 +26,20 @@ import {
     VerifyDbResult,
     Signature,
 } from './types.js';
+import {
+    generateDocFromOperation,
+    resolveDIDFromEvents,
+    ValidRegistries,
+    ValidTypes,
+    ValidVersions,
+} from './did-resolver.js';
 
-const ValidVersions = [1];
-const ValidTypes = ['agent', 'asset'];
-// Registries that are considered valid when importing DIDs from the network
-const ValidRegistries = [
-    'local',
-    'hyperswarm',
-    'TESS',
-    'TBTC',
-    'TFTC',
-    'Signet',
-    'Signet-Inscription',
-    'BTC-Inscription'
-];
+export {
+    generateDIDFromOperation,
+    generateDocFromOperation,
+    generateOperationCID,
+    resolveDIDFromEvents,
+} from './did-resolver.js';
 
 enum ImportStatus {
     ADDED = 'added',
@@ -63,7 +63,6 @@ export default class Gatekeeper implements GatekeeperInterface {
     private readonly ipfsEnabled: boolean;
     supportedRegistries: string[];
     private didLocks = new Map<string, Promise<void>>();
-
     constructor(options: GatekeeperOptions) {
         if (!options || !options.db) {
             throw new InvalidParameterError('missing options.db');
@@ -97,6 +96,12 @@ export default class Gatekeeper implements GatekeeperInterface {
             if (!ValidRegistries.includes(registry)) {
                 throw new InvalidParameterError(`registry=${registry}`);
             }
+        }
+    }
+
+    private clearEventsSeen(): void {
+        for (const key of Object.keys(this.eventsSeen)) {
+            delete this.eventsSeen[key];
         }
     }
 
@@ -142,7 +147,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                 const doc = await this.resolveDID(did, { verify: true });
                 validUntil = doc.mdip?.validUntil;
             }
-            catch (error) {
+            catch {
                 if (chatty) {
                     this.log.warn(`removing ${n}/${total} ${did} invalid`);
                 }
@@ -259,7 +264,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
                 }
             }
-            catch (error) {
+            catch {
             }
         }
 
@@ -275,7 +280,9 @@ export default class Gatekeeper implements GatekeeperInterface {
     // For testing purposes
     async resetDb(): Promise<boolean> {
         await this.db.resetDb();
+        this.clearEventsSeen();
         this.verifiedDIDs = {};
+        this.eventsQueue = [];
         return true;
     }
 
@@ -402,11 +409,19 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         if (operation.mdip.type === 'asset') {
-            if (operation.controller !== operation.signature?.signer) {
+            const controllerDid = operation.signature?.signer;
+            if (!controllerDid) {
+                throw new InvalidOperationError('signature.signer');
+            }
+
+            if (operation.controller !== controllerDid) {
                 throw new InvalidOperationError('signer is not controller');
             }
 
-            const doc = await this.resolveDID(operation.signature!.signer, { confirm: true, versionTime: operation.signature!.signed });
+            const doc = await this.resolveDID(controllerDid, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
 
             if (doc.mdip && doc.mdip.registry === 'local' && operation.mdip.registry !== 'local') {
                 throw new InvalidOperationError(`non-local registry=${operation.mdip.registry}`);
@@ -448,7 +463,10 @@ export default class Gatekeeper implements GatekeeperInterface {
 
         if (doc.didDocument.controller) {
             // This DID is an asset, verify with controller's keys
-            const controllerDoc = await this.resolveDID(doc.didDocument.controller, { confirm: true, versionTime: operation.signature!.signed });
+            const controllerDoc = await this.resolveDID(doc.didDocument.controller, {
+                confirm: true,
+                versionTime: operation.signature!.signed,
+            });
             return this.verifyUpdateOperation(operation, controllerDoc);
         }
 
@@ -531,267 +549,30 @@ export default class Gatekeeper implements GatekeeperInterface {
     }
 
     async generateDoc(anchor: Operation, defaultDID?: string): Promise<MdipDocument> {
-        let doc: MdipDocument = {};
-        try {
-            if (!anchor?.mdip) {
-                return {};
-            }
-
-            if (!ValidVersions.includes(anchor.mdip.version)) {
-                return {};
-            }
-
-            if (!ValidTypes.includes(anchor.mdip.type)) {
-                return {};
-            }
-
-            if (!ValidRegistries.includes(anchor.mdip.registry)) {
-                return {};
-            }
-
-            const did = defaultDID ?? await this.generateDID(anchor);
-
-            if (anchor.mdip.type === 'agent') {
-                // TBD support different key types?
-                doc = {
-                    "didDocument": {
-                        "@context": ["https://www.w3.org/ns/did/v1"],
-                        "id": did,
-                        "verificationMethod": [
-                            {
-                                "id": "#key-1",
-                                "controller": did,
-                                "type": "EcdsaSecp256k1VerificationKey2019",
-                                "publicKeyJwk": anchor.publicJwk,
-                            }
-                        ],
-                        "authentication": [
-                            "#key-1"
-                        ],
-                    },
-                    "didDocumentMetadata": {
-                        "created": anchor.created,
-                    },
-                    "didDocumentData": {},
-                    "mdip": anchor.mdip,
-                };
-            }
-
-            if (anchor.mdip.type === 'asset') {
-                doc = {
-                    "didDocument": {
-                        "@context": ["https://www.w3.org/ns/did/v1"],
-                        "id": did,
-                        "controller": anchor.controller,
-                    },
-                    "didDocumentMetadata": {
-                        "created": anchor.created,
-                    },
-                    "didDocumentData": anchor.data,
-                    "mdip": anchor.mdip,
-                };
-            }
-
-            if (doc.didDocumentMetadata && anchor.mdip.prefix) {
-                doc.didDocumentMetadata.canonicalId = did;
-            }
-        }
-        catch (error) {
-        }
-
-        return doc;
+        return generateDocFromOperation(anchor, {
+            defaultDID,
+            didPrefix: this.didPrefix,
+            generateDID: (operation) => this.generateDID(operation),
+        });
     }
 
     async resolveDID(
         did?: string,
         options?: ResolveDIDOptions
     ): Promise<MdipDocument> {
-        const { versionTime, versionSequence, confirm = false, verify = false } = options || {};
+        const events = did && isValidDID(did) ? await this.db.getEvents(did) : [];
 
-        if (!did || !isValidDID(did)) {
-            return {
-                didResolutionMetadata: {
-                    error: "invalidDid"
-                },
-                didDocument: {},
-                didDocumentMetadata: {}
-            };
-        }
-
-        const events = await this.db.getEvents(did);
-
-        if (events.length === 0) {
-            return {
-                didResolutionMetadata: {
-                    error: "notFound"
-                },
-                didDocument: {},
-                didDocumentMetadata: {}
-            };
-        }
-
-        const anchor = events[0];
-        let doc = await this.generateDoc(anchor.operation, did);
-
-        if (versionTime && doc.mdip?.created && new Date(doc.mdip.created) > new Date(versionTime)) {
-            // TBD What to return if DID was created after specified time?
-        }
-
-        function generateStandardDatetime(time: any): string {
-            const date = new Date(time);
-            // Remove milliseconds for standardization
-            return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-        }
-
-        const created = generateStandardDatetime(doc.didDocumentMetadata?.created);
-        const canonicalId = doc.didDocumentMetadata?.canonicalId;
-        let versionNum = 1; // initial version is version 1 by definition
-        let confirmed = true; // create event is always confirmed by definition
-
-        for (const { time, operation, registry, blockchain } of events) {
-            const versionId = await this.generateCID(operation);
-            const updated = generateStandardDatetime(time);
-            let timestamp;
-
-            if (doc.mdip?.registry) {
-                let lowerBound;
-                let upperBound;
-
-                if (operation.blockid) {
-                    const lowerBlock = await this.db.getBlock(doc.mdip.registry, operation.blockid);
-
-                    if (lowerBlock) {
-                        lowerBound = {
-                            time: lowerBlock.time,
-                            timeISO: new Date(lowerBlock.time * 1000).toISOString(),
-                            blockid: lowerBlock.hash,
-                            height: lowerBlock.height,
-                        };
-                    }
-                }
-
-                if (blockchain) {
-                    const upperBlock = await this.db.getBlock(doc.mdip.registry, blockchain.height);
-
-                    if (upperBlock) {
-                        upperBound = {
-                            time: upperBlock.time,
-                            timeISO: new Date(upperBlock.time * 1000).toISOString(),
-                            blockid: upperBlock.hash,
-                            height: upperBlock.height,
-                            txid: blockchain.txid,
-                            txidx: blockchain.index,
-                            batchid: blockchain.batch,
-                            opidx: blockchain.opidx,
-                        };
-                    }
-                }
-
-                if (lowerBound || upperBound) {
-                    timestamp = {
-                        chain: doc.mdip.registry,
-                        opid: versionId,
-                        lowerBound,
-                        upperBound,
-                    };
-                }
-            }
-
-            if (operation.type === 'create') {
-                if (verify) {
-                    const valid = await this.verifyCreateOperation(operation);
-
-                    if (!valid) {
-                        throw new InvalidOperationError('signature');
-                    }
-                }
-
-                doc.didDocumentMetadata = {
-                    created,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                }
-                continue;
-            }
-
-            if (versionTime && new Date(time) > new Date(versionTime)) {
-                break;
-            }
-
-            if (versionSequence && versionNum === versionSequence) {
-                break;
-            }
-
-            confirmed = confirmed && doc.mdip?.registry === registry;
-
-            if (confirm && !confirmed) {
-                break;
-            }
-
-            if (verify) {
-                const valid = await this.verifyUpdateOperation(operation, doc);
-
-                if (!valid) {
-                    throw new InvalidOperationError('signature');
-                }
-
-                // TEMP during did:test, operation.previd is optional
-                if (operation.previd && operation.previd !== doc.didDocumentMetadata?.versionId) {
-                    throw new InvalidOperationError('previd');
-                }
-            }
-
-            if (operation.type === 'update') {
-                versionNum += 1;
-
-                doc = operation.doc || {};
-                doc.didDocumentMetadata = {
-                    created,
-                    updated,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                }
-                continue;
-            }
-
-            if (operation.type === 'delete') {
-                versionNum += 1;
-
-                doc.didDocument = { id: did };
-                doc.didDocumentData = {};
-                doc.didDocumentMetadata = {
-                    deactivated: true,
-                    created,
-                    deleted: updated,
-                    canonicalId,
-                    versionId,
-                    version: versionNum.toString(),
-                    confirmed,
-                    timestamp,
-                }
-            }
-        }
-
-        doc.didResolutionMetadata = {
-            // We'll deliberately use millisecond precision here to avoid intermittent unit test failures
-            retrieved: new Date().toISOString(),
-        };
-
-        // Remove deprecated fields
-        delete (doc as any)['@context'];
-
-        if (doc.mdip) {
-            delete doc.mdip.opid // Replaced by didDocumentMetadata.versionId
-            delete doc.mdip.registration // Replaced by didDocumentMetadata.timestamp
-        }
-
-        return copyJSON(doc);
+        return resolveDIDFromEvents({
+            did,
+            events,
+            options,
+            didPrefix: this.didPrefix,
+            generateCID: (operation) => this.generateCID(operation),
+            generateDID: (operation) => this.generateDID(operation),
+            getBlock: (registry, block) => this.db.getBlock(registry, block),
+            verifyCreateOperation: (operation) => this.verifyCreateOperation(operation),
+            verifyUpdateOperation: (operation, doc) => this.verifyUpdateOperation(operation, doc),
+        });
     }
 
     async updateDID(operation: Operation): Promise<boolean> {
@@ -925,9 +706,13 @@ export default class Gatekeeper implements GatekeeperInterface {
             }
 
             const did = event.did;
+            if (!did) {
+                return ImportStatus.REJECTED;
+            }
 
             return await this.withDidLock(did, async () => {
-                const currentEvents = await this.db.getEvents(did);
+                const lockedDid = did;
+                const currentEvents = await this.db.getEvents(lockedDid);
 
                 for (const e of currentEvents) {
                     if (!e.opid) {
@@ -954,7 +739,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                         // If this import is on the native registry, replace the current one
                         const index = currentEvents.indexOf(opMatch);
                         currentEvents[index] = event;
-                        await this.db.setEvents(did, currentEvents);
+                        await this.db.setEvents(lockedDid, currentEvents);
                         return ImportStatus.ADDED;
                     }
 
@@ -967,13 +752,13 @@ export default class Gatekeeper implements GatekeeperInterface {
                     }
 
                     if (currentEvents.length === 0) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
                     // TEMP during did:test, operation.previd is optional
                     if (!event.operation.previd) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -986,7 +771,7 @@ export default class Gatekeeper implements GatekeeperInterface {
                     const index = currentEvents.indexOf(idMatch);
 
                     if (index === currentEvents.length - 1) {
-                        await this.db.addEvent(did, event);
+                        await this.db.addEvent(lockedDid, event);
                         return ImportStatus.ADDED;
                     }
 
@@ -1000,7 +785,9 @@ export default class Gatekeeper implements GatekeeperInterface {
                             (event.ordinal && nextEvent.ordinal && compareOrdinals(event.ordinal, nextEvent.ordinal) < 0)) {
                             // reorg event, discard the rest of the operation sequence and replace with this event
                             const newSequence = [...currentEvents.slice(0, index + 1), event];
-                            await this.db.setEvents(did, newSequence);
+                            await this.db.setEvents(lockedDid, newSequence, {
+                                operationEvents: [event],
+                            });
                             return ImportStatus.ADDED;
                         }
                     }
@@ -1026,6 +813,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         let added = 0;
         let merged = 0;
         let rejected = 0;
+        const acceptedHashes: string[] = [];
+        const acceptedEvents: GatekeeperEvent[] = [];
 
         this.eventsQueue = [];
 
@@ -1036,10 +825,18 @@ export default class Gatekeeper implements GatekeeperInterface {
 
             if (status === ImportStatus.ADDED) {
                 added += 1;
+                if (event.operation.signature?.hash) {
+                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: added event for ${event.did}`);
             }
             else if (status === ImportStatus.MERGED) {
                 merged += 1;
+                if (event.operation.signature?.hash) {
+                    acceptedHashes.push(event.operation.signature.hash.toLowerCase());
+                }
+                acceptedEvents.push(event);
                 this.log.debug(`import ${i}/${total}: merged event for ${event.did}`);
             }
             else if (status === ImportStatus.REJECTED) {
@@ -1054,7 +851,7 @@ export default class Gatekeeper implements GatekeeperInterface {
             event = tempQueue.shift();
         }
 
-        return { added, merged, rejected };
+        return { added, merged, rejected, acceptedHashes, acceptedEvents };
     }
 
     async processEvents(): Promise<ProcessEventsResult> {
@@ -1066,6 +863,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         let merged = 0;
         let rejected = 0;
         let done = false;
+        const acceptedHashes = new Set<string>();
+        const acceptedEventsByHash = new Map<string, GatekeeperEvent>();
 
         try {
             this.isProcessingEvents = true;
@@ -1076,6 +875,15 @@ export default class Gatekeeper implements GatekeeperInterface {
                 added += response.added;
                 merged += response.merged;
                 rejected += response.rejected;
+                for (const hash of response.acceptedHashes) {
+                    acceptedHashes.add(hash);
+                }
+                for (const event of response.acceptedEvents) {
+                    const hash = event.operation.signature?.hash?.toLowerCase();
+                    if (hash && !acceptedEventsByHash.has(hash)) {
+                        acceptedEventsByHash.set(hash, event);
+                    }
+                }
 
                 done = (response.added === 0 && response.merged === 0);
             }
@@ -1089,9 +897,21 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         const pending = this.eventsQueue.length;
-        const response = { added, merged, rejected, pending };
+        const response = {
+            added,
+            merged,
+            rejected,
+            pending,
+            acceptedHashes: Array.from(acceptedHashes),
+            acceptedEvents: Array.from(acceptedEventsByHash.values()),
+        };
 
-        this.log.debug(`processEvents: ${JSON.stringify(response)}`);
+        const { acceptedEvents, ...logResponseBase } = response;
+        const logResponse = {
+            ...logResponseBase,
+            acceptedEventsCount: acceptedEvents.length,
+        };
+        this.log.debug(`processEvents: ${JSON.stringify(logResponse)}`);
 
         return response;
     }
@@ -1181,8 +1001,8 @@ export default class Gatekeeper implements GatekeeperInterface {
         }
 
         let queued = 0;
-        let rejected = 0;
         let processed = 0;
+        const rejectedIndices: number[] = [];
 
         for (let i = 0; i < batch.length; i++) {
             const event = batch[i];
@@ -1200,15 +1020,16 @@ export default class Gatekeeper implements GatekeeperInterface {
                 }
             }
             else {
-                rejected += 1;
+                rejectedIndices.push(i);
             }
         }
 
         return {
             queued,
             processed,
-            rejected,
-            total: this.eventsQueue.length
+            rejected: rejectedIndices.length,
+            total: this.eventsQueue.length,
+            rejectedIndices,
         };
     }
 

@@ -2,7 +2,7 @@
 set -e
 
 PROFILE_ARGS=()
-SERVICES=(cli gatekeeper keymaster redis mongodb search-server)
+SERVICES=(cli gatekeeper keymaster redis mongodb postgres search-server)
 
 if [ -f .env ]; then
   set -a
@@ -38,7 +38,16 @@ while true; do
 
   if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
     echo "❌ Timed out waiting for containers to be 'Up'"
-    docker compose ps
+    docker compose "${PROFILE_ARGS[@]}" ps -a
+
+    RUNNING_SERVICES=$(docker compose "${PROFILE_ARGS[@]}" ps --services --status running "${SERVICES[@]}")
+    for service in "${SERVICES[@]}"; do
+      if ! grep -qx "$service" <<< "$RUNNING_SERVICES"; then
+        echo "----- logs: $service -----"
+        docker compose "${PROFILE_ARGS[@]}" logs --no-color "$service" || true
+      fi
+    done
+
     exit 1
   fi
 

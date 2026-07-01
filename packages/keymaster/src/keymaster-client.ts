@@ -23,6 +23,7 @@ import {
     KeymasterInterface,
     NoticeMessage,
     Poll,
+    PublishChallengeReceiptOptions,
     StoredWallet,
     VerifiableCredential,
     ViewPollResult,
@@ -118,7 +119,7 @@ export default class KeymasterClient implements KeymasterInterface {
             const response = await axios.get(`${this.API}/ready`);
             return response.data.ready;
         }
-        catch (error) {
+        catch {
             return false;
         }
     }
@@ -538,6 +539,19 @@ export default class KeymasterClient implements KeymasterInterface {
         try {
             const response = await axios.post(`${this.API}/response/verify`, { response: responseDID, options });
             return response.data.verify;
+        }
+        catch (error) {
+            throwError(error);
+        }
+    }
+
+    async publishChallengeReceipts(
+        responseDID: string,
+        options?: PublishChallengeReceiptOptions
+    ): Promise<string[]> {
+        try {
+            const response = await axios.post(`${this.API}/response/receipts`, { response: responseDID, options });
+            return response.data.dids;
         }
         catch (error) {
             throwError(error);

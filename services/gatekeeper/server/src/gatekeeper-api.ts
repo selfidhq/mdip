@@ -3,46 +3,41 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
+import rateLimit from 'express-rate-limit';
 
 import Gatekeeper from '@mdip/gatekeeper';
 import DbJsonCache from '@mdip/gatekeeper/db/json-cache';
 import DbRedis from '@mdip/gatekeeper/db/redis';
 import DbSqlite from '@mdip/gatekeeper/db/sqlite';
 import DbMongo from '@mdip/gatekeeper/db/mongo';
-import { CheckDIDsResult, ResolveDIDOptions, Operation } from '@mdip/gatekeeper/types';
+import DbPostgres from '@mdip/gatekeeper/db/postgres';
+import {
+    CheckDIDsResult,
+    Operation,
+    ResolveDIDOptions,
+} from '@mdip/gatekeeper/types';
 import KuboClient from '@mdip/ipfs/kubo';
 import { childLogger } from '@mdip/common/logger';
 import ClusterClient from '@mdip/ipfs/cluster';
 import config from './config.js';
+import {
+    createWhitelistBlockList,
+    formatBytes,
+    formatDuration,
+    DatabaseUnavailableError,
+    databaseUnavailableResponse,
+    exportIndexWithReadiness,
+    isRateLimitWhitelistedRequest,
+    isGatekeeperReady,
+    logRequest,
+    parseIndexExportRequest,
+    rateLimitWindowUnits,
+    shouldSkipRateLimitPath,
+} from './helpers.js';
 
 EventEmitter.defaultMaxListeners = 100;
 
 const log = childLogger({ service: 'gatekeeper-server' });
-
-function logRequest(req: express.Request, res: express.Response, next: express.NextFunction): void {
-    const startTime = process.hrtime.bigint();
-
-    res.on('finish', () => {
-        const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
-        const contentLength = res.getHeader('content-length');
-        const size = typeof contentLength === 'number'
-            ? String(contentLength)
-            : (typeof contentLength === 'string' ? contentLength : '-');
-        const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
-
-        if (res.statusCode >= 500) {
-            log.error(msg);
-        }
-        else if (res.statusCode >= 400) {
-            log.warn(msg);
-        }
-        else {
-            log.info(msg);
-        }
-    });
-
-    next();
-}
 
 const dbName = 'mdip';
 const db = (() => {
@@ -50,6 +45,7 @@ const db = (() => {
     case 'sqlite': return new DbSqlite(dbName);
     case 'mongodb': return new DbMongo(dbName);
     case 'redis': return new DbRedis(dbName);
+    case 'postgres': return new DbPostgres(dbName);
     case 'json':
     case 'json-cache': return new DbJsonCache(dbName);
     default: return null;
@@ -92,8 +88,51 @@ const startTime = new Date();
 const app = express();
 const v1router = express.Router();
 
+if (config.gatekeeperTrustProxy) {
+    app.set('trust proxy', true);
+}
+
+const whitelistBlockList = createWhitelistBlockList(config.rateLimitWhitelist);
+const rateLimitWindowUnit = config.rateLimitWindowUnit as keyof typeof rateLimitWindowUnits;
+const rateLimitWindowMs = config.rateLimitWindowValue * (rateLimitWindowUnits[rateLimitWindowUnit] ?? rateLimitWindowUnits.minute);
+
+const apiRateLimiter = config.rateLimitEnabled
+    ? rateLimit({
+        windowMs: rateLimitWindowMs,
+        limit: config.rateLimitMaxRequests,
+        statusCode: 429,
+        message: { error: 'Too many requests' },
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        skip: (req) => {
+            if (req.method === 'OPTIONS') {
+                return true;
+            }
+
+            if (shouldSkipRateLimitPath(req, config.rateLimitSkipPaths)) {
+                return true;
+            }
+
+            if (config.rateLimitWhitelist.length === 0) {
+                return false;
+            }
+
+            return isRateLimitWhitelistedRequest(req, whitelistBlockList);
+        },
+    })
+    : null;
+
+if (config.rateLimitEnabled) {
+    log.info(`Rate limiting enabled: ${config.rateLimitMaxRequests} requests per ${config.rateLimitWindowValue} ${config.rateLimitWindowUnit}(s)`);
+}
+else {
+    log.info('Rate limiting disabled');
+}
+
+app.disable('x-powered-by');
+// eslint-disable-next-line sonarjs/cors
 app.use(cors());
-app.options('*', cors());
+app.options('/{*corsPreflight}', cors());
 
 app.use(logRequest);
 app.use(express.json({ limit: config.jsonLimit }));
@@ -135,7 +174,8 @@ let serverReady = false;
  */
 v1router.get('/ready', async (req, res) => {
     try {
-        res.json(serverReady);
+        const ready = await isGatekeeperReady(serverReady, db);
+        res.status(ready ? 200 : 503).json(ready);
     } catch (error: any) {
         res.status(500).send(error.toString());
     }
@@ -705,7 +745,7 @@ v1router.get('/did/:did', async (req, res) => {
 
         const doc = await gatekeeper.resolveDID(req.params.did, options);
         res.json(doc);
-    } catch (error: any) {
+    } catch {
         res.status(404).send({ error: 'DID not found' });
     }
 });
@@ -919,6 +959,136 @@ v1router.post('/dids/', async (req, res) => {
 
 /**
  * @swagger
+ * /index/export:
+ *   post:
+ *     summary: Export a paginated DID index snapshot or incremental change batch.
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ mode ]
+ *             properties:
+ *               mode:
+ *                 type: string
+ *                 enum: [ snapshot, changes ]
+ *               cursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Opaque snapshot cursor or incremental change cursor.
+ *               checkpointCursor:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Snapshot-only high-water change cursor returned by the first snapshot page and required on continuation pages.
+ *               limit:
+ *                 type: integer
+ *                 minimum: 1
+ *               includeOperations:
+ *                 type: boolean
+ *                 description: Changes-only. Include event-level operation records for consumers that need replay order.
+ *
+ *     responses:
+ *       200:
+ *         description: Index export page.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ snapshot ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Opaque snapshot page cursor. Clients must store and pass it back without interpretation.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Snapshot high-water change cursor returned on every snapshot page.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                 - type: object
+ *                   required: [ mode, indexEpoch, cursor, checkpointCursor, hasMore, dids, blocks ]
+ *                   properties:
+ *                     mode:
+ *                       type: string
+ *                       enum: [ changes ]
+ *                     indexEpoch:
+ *                       type: string
+ *                       description: Local Gatekeeper index epoch. Changes when the backing index database is reset or replaced.
+ *                     cursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Incremental change cursor.
+ *                     checkpointCursor:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Change high-water cursor returned with the page.
+ *                     hasMore:
+ *                       type: boolean
+ *                     dids:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     blocks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                     operations:
+ *                       type: array
+ *                       description: Optional ordered operation records. Returned only when includeOperations is true.
+ *                       items:
+ *                         type: object
+ *       400:
+ *         description: Invalid request body.
+ *       503:
+ *         description: Gatekeeper database is unavailable.
+ *       500:
+ *         description: Internal Server Error.
+ */
+v1router.post('/index/export', async (req, res) => {
+    let request: ReturnType<typeof parseIndexExportRequest>;
+
+    try {
+        request = parseIndexExportRequest(req.body);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message ?? String(error) });
+        return;
+    }
+
+    try {
+        const response = await exportIndexWithReadiness(db, request);
+        res.json(response);
+    } catch (error: any) {
+        if (error instanceof DatabaseUnavailableError) {
+            log.warn({ err: error.cause ?? error }, 'Index export database unavailable');
+            res.status(503).json(databaseUnavailableResponse());
+            return;
+        }
+
+        log.error({ err: error }, 'Index export error');
+        res.status(500).json({ error: error.toString() });
+    }
+});
+
+/**
+ * @swagger
  * /dids/remove:
  *   post:
  *     summary: Remove one or more DIDs
@@ -1114,6 +1284,11 @@ v1router.post('/dids/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation (bad signature, size limit, etc.).
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order (for importDIDs this is `dids.flat()` order).
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: Total number of events in the queue after this import.
@@ -1206,7 +1381,7 @@ v1router.post('/dids/import', async (req, res) => {
  */
 v1router.post('/batch/export', async (req, res) => {
     try {
-        const { dids } = req.body;
+        const dids = req.body?.dids;
         const response = await gatekeeper.exportBatch(dids);
         res.json(response);
     } catch (error: any) {
@@ -1290,6 +1465,11 @@ v1router.post('/batch/export', async (req, res) => {
  *                 rejected:
  *                   type: integer
  *                   description: Number of events that failed validation.
+ *                 rejectedIndices:
+ *                   type: array
+ *                   description: Zero-based indexes of rejected events in the original submitted batch order.
+ *                   items:
+ *                     type: integer
  *                 total:
  *                   type: integer
  *                   description: The total event queue size after this import.
@@ -1608,6 +1788,11 @@ v1router.get('/db/verify', async (req, res) => {
  *                     pending:
  *                       type: integer
  *                       description: Number of events still left in the queue after processing.
+ *                     acceptedHashes:
+ *                       type: array
+ *                       description: Lower-case signature hashes of events accepted during this processing run (added or merged).
+ *                       items:
+ *                         type: string
  *       500:
  *         description: Internal Server Error.
  *         content:
@@ -2062,6 +2247,10 @@ v1router.post('/block/:registry', async (req, res) => {
     }
 });
 
+if (apiRateLimiter) {
+    app.use('/api', apiRateLimiter);
+}
+
 app.use('/api/v1', v1router);
 
 app.use('/api', (req, res) => {
@@ -2144,62 +2333,6 @@ async function reportStatus() {
     log.info(`Uptime: ${status.uptimeSeconds}s (${formatDuration(status.uptimeSeconds)})`);
 
     log.info('------------------------------------');
-}
-
-function formatDuration(seconds: number) {
-    const secPerMin = 60;
-    const secPerHour = secPerMin * 60;
-    const secPerDay = secPerHour * 24;
-
-    const days = Math.floor(seconds / secPerDay);
-    seconds %= secPerDay;
-
-    const hours = Math.floor(seconds / secPerHour);
-    seconds %= secPerHour;
-
-    const minutes = Math.floor(seconds / secPerMin);
-    seconds %= secPerMin;
-
-    let duration = "";
-
-    if (days > 0) {
-        if (days > 1) {
-            duration += `${days} days, `;
-        } else {
-            duration += `1 day, `;
-        }
-    }
-
-    if (hours > 0) {
-        if (hours > 1) {
-            duration += `${hours} hours, `;
-        } else {
-            duration += `1 hour, `;
-        }
-    }
-
-    if (minutes > 0) {
-        if (minutes > 1) {
-            duration += `${minutes} minutes, `;
-        } else {
-            duration += `1 minute, `;
-        }
-    }
-
-    if (seconds === 1) {
-        duration += `1 second`;
-    } else {
-        duration += `${seconds} seconds`;
-    }
-
-    return duration;
-}
-
-function formatBytes(bytes: number) {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`;
 }
 
 async function main() {

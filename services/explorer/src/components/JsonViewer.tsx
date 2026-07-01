@@ -15,15 +15,17 @@ import {
     Typography,
     IconButton
 } from "@mui/material";
-import {
-    GatekeeperInterface,
-    MdipDocument
-} from "@mdip/gatekeeper/types";
 import ContentCopy from "@mui/icons-material/ContentCopy";
-import { handleCopyDID } from '../shared/utilities.js';
-import axios from "axios";
+import type { MdipDocument } from "@mdip/gatekeeper/types";
+import {
+    fetchDIDDocument,
+    searchDIDDocuments,
+} from "../api/searchClient.js";
+import { useSnackbar } from "../contexts/SnackbarProvider.js";
+import { handleCopyDID } from "../shared/utilities.js";
 import { useSearchParams } from "react-router-dom";
 
+<<<<<<< HEAD
 const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "/search-api";
 const VERSION = '/api/v1';
 
@@ -35,6 +37,10 @@ function JsonViewer(
         gatekeeper: GatekeeperInterface;
         setError: (error: any) => void;
     }) {
+=======
+function JsonViewer() {
+    const { setError } = useSnackbar();
+>>>>>>> origin/main
     const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
@@ -67,7 +73,12 @@ function JsonViewer(
             setAliasDocs(undefined);
             setFormDid(did);
 
-            const docs = await gatekeeper.resolveDID(did);
+            const docs = await fetchDIDDocument(did);
+            if (!docs) {
+                setError("DID document not found.");
+                return;
+            }
+
             if (!docs.didDocumentMetadata) {
                 setError("Invalid DID");
                 return;
@@ -93,10 +104,7 @@ function JsonViewer(
             setFormDid(query);
             setSearchPage(0);
 
-            const response = await axios.get(`${searchServerURL}${VERSION}/search`, {
-                params: { q: query }
-            });
-            setSearchResults(response.data);
+            setSearchResults(await searchDIDDocuments(query));
         } catch (error: any) {
             setError(error);
         }
@@ -118,9 +126,14 @@ function JsonViewer(
     async function selectAliasDocsVersion(version: number) {
         try {
             setAliasDocsVersion(version);
-            const docs = await gatekeeper.resolveDID(currentDid, {
+            const docs = await fetchDIDDocument(currentDid, {
                 versionSequence: version,
             });
+            if (!docs) {
+                setError("DID version not found.");
+                return;
+            }
+
             setAliasDocs(docs);
         } catch (error: any) {
             setError(error);
@@ -272,7 +285,7 @@ function JsonViewer(
                                         sx={{
                                             fontFamily: "Courier, monospace",
                                             textDecoration: "underline",
-                                            color: "blue",
+                                            color: "primary.main",
                                             cursor: "pointer",
                                             maxWidth: 700,
                                             overflow: "hidden",
@@ -454,4 +467,3 @@ function JsonViewer(
 }
 
 export default JsonViewer;
-

@@ -8,7 +8,6 @@ const external = [
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {})
 ];
-const isExternal = (id) => external.some((pkgName) => id === pkgName || id.startsWith(`${pkgName}/`) || id.includes(`/node_modules/${pkgName}/`));
 
 const config = {
     input: {
@@ -21,6 +20,7 @@ const config = {
         'db/json-memory': 'dist/esm/db/json-memory.js',
         'db/sqlite': 'dist/esm/db/sqlite.js',
         'db/redis': 'dist/esm/db/redis.js',
+        'db/postgres': 'dist/esm/db/postgres.js',
         'db/mongo': 'dist/esm/db/mongo.js'
     },
     output: {
@@ -30,7 +30,7 @@ const config = {
         entryFileNames: '[name].cjs',
         chunkFileNames: '[name]-[hash].cjs'
     },
-    external: isExternal,
+    external,
     plugins: [
         resolve({
             preferBuiltins: true

@@ -8,6 +8,7 @@ import JsonFile from './db/jsonfile.js';
 import JsonRedis from './db/redis.js';
 import JsonMongo from './db/mongo.js';
 import JsonSQLite from './db/sqlite.js';
+import JsonPostgres from './db/postgres.js';
 import config from './config.js';
 import { GatekeeperEvent, Operation } from '@mdip/gatekeeper/types';
 import Inscription from '@mdip/inscription';
@@ -254,7 +255,9 @@ async function extractOperations(txn: BlockTxVerbose, height: number, index: num
         }));
 
         await jsonPersister.updateDb((db) => {
-            (db.discovered ??= []).push({ events });
+            const discovered = db.discovered ?? [];
+            db.discovered = discovered;
+            discovered.push({ events });
         });
     }
     catch (error) {
@@ -394,7 +397,7 @@ async function extractCommitHex(revealHex: string) {
         }
 
         if (!commitTxid) {
-            commitTxid = inp.hash.subarray().reverse().toString('hex');
+            commitTxid = Buffer.from(inp.hash).reverse().toString('hex');
             break;
         }
     }
@@ -761,7 +764,7 @@ async function waitForChain() {
             const blockchainInfo = await btcClient.getBlockchainInfo();
             log.debug({ blockchainInfo }, 'Blockchain Info');
             isReady = true;
-        } catch (error) {
+        } catch {
             log.debug(`Waiting for ${config.chain} node...`);
         }
 
@@ -844,6 +847,9 @@ async function main() {
     }
     else if (config.db === 'sqlite') {
         jsonPersister = await JsonSQLite.create(REGISTRY);
+    }
+    else if (config.db === 'postgres') {
+        jsonPersister = await JsonPostgres.create(REGISTRY);
     }
     else {
         jsonPersister = jsonFile;
