@@ -25,17 +25,8 @@ import { useSnackbar } from "../contexts/SnackbarProvider.js";
 import { handleCopyDID } from "../shared/utilities.js";
 import { useSearchParams } from "react-router-dom";
 
-const searchServerURL = import.meta.env.VITE_SEARCH_SERVER || "/search-api";
-const VERSION = '/api/v1';
-
-function JsonViewer(
-    {
-        gatekeeper,
-        setError,
-    }: {
-        gatekeeper: GatekeeperInterface;
-        setError: (error: any) => void;
-    }) {
+function JsonViewer() {
+    const { setError } = useSnackbar();
     const [aliasDocs, setAliasDocs] = useState<MdipDocument | undefined>(undefined);
     const [aliasDocsVersion, setAliasDocsVersion] = useState<number>(1);
     const [aliasDocsVersionMax, setAliasDocsVersionMax] = useState<number>(1);
