@@ -3,32 +3,16 @@ FROM node:22.22.2-bullseye-slim
 
 # Install curl
 RUN apt-get update && \
-    apt-get install -y curl python3 make g++ --no-install-recommends && \
+    apt-get install -y curl --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
 
-# Copy root package files and packages
+# Copy package.json and package-lock.json to the working directory
 COPY package*.json ./
 COPY packages/ ./packages/
 
-# Install root dependencies
-RUN npm ci
-
-# Build workspace packages
-RUN npm run build
-
-# Copy explorer service
-COPY services/explorer ./services/explorer/
-
-# Install explorer dependencies and build
-WORKDIR /app/services/explorer
-
-# Set VITE env to use relative API path
-ARG VITE_EXPLORER_PORT=4000
-ARG VITE_GATEKEEPER_URL=/api
-ARG VITE_SEARCH_SERVER=/search-api
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
 ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
 ENV VITE_SEARCH_SERVER=http://search-clusterip.development.svc.cluster.local:4002
@@ -38,11 +22,14 @@ RUN npm ci --ignore-scripts
 RUN npm rebuild sqlite3
 RUN npm run build
 
-# Install express for serving
-RUN npm install express
+COPY services/explorer ./explorer/
 
-# Expose port
+WORKDIR /app/explorer
+
+RUN npm i
+RUN npm run build
+
 EXPOSE 4000
 
-# Run the server
+# Run...
 CMD ["node", "server.js"]
