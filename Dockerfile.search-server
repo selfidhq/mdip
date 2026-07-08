@@ -20,7 +20,7 @@ COPY packages/ ./packages/
 COPY services/search-server ./search-server/
 
 # Install dependencies
-RUN npm ci --ignore-scripts
+RUN npm ci
 RUN npm rebuild sqlite3
 RUN npm run build
 
