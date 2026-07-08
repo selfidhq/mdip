@@ -1,41 +1,38 @@
-# Use the official Node.js as the base image
+# Use the stable, modern official Node.js base image
 FROM node:22.15.0-bookworm-slim
 
-# Install curl
+# Install system utilities and tools required for native C++ module compilation
 RUN apt-get update && \
-    apt-get install -y curl --no-install-recommends && \
+    apt-get install -y curl python3 make g++ --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system --gid 1001 ops
-RUN adduser --system --uid 1001 ops
+# Create a secure, unprivileged system user and group
+RUN addgroup --system --gid 1001 ops && \
+    adduser --system --uid 1001 --ingroup ops ops
 
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
-
-# Set the working directory
+# Set up the isolated working directory
 WORKDIR /app
 
-# Copy packages
+# Copy the core package manifests and codebases
 COPY package*.json ./
 COPY packages/ ./packages/
 COPY services/search-server ./search-server/
 
-# Install dependencies
-RUN npm ci --ignore-scripts
-RUN npm rebuild sqlite3
+# Install and build all dependencies safely as root.
+RUN npm ci
 RUN npm run build
 
-# Make sure dir is owned by user who will build
-RUN chown -R ops:ops /app/search-server
-
-# Switch to ops user
-USER ops
-
+# Navigate to the specific target service and build it
 WORKDIR /app/search-server
-
-RUN npm i
 RUN npm run build
+
+# Hand over complete read/write/execute ownership of the application to 'ops'
+RUN chown -R ops:ops /app
+
+# Permanently drop root privileges—the container now runs entirely as 'ops'
+USER ops
 
 EXPOSE 4002
 
-# Run...
+# Run the compiled application
 CMD ["node", "dist/index.js"]
