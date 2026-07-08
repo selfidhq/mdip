@@ -1,38 +1,30 @@
-# Use the stable, modern official Node.js base image
-FROM node:22.15.0-bookworm-slim
+# Use the official Node.js base image (Bullseye allows lenient system user environments)
+FROM node:22.15.0-bullseye-slim
 
-# Install system utilities and tools required for native C++ module compilation
-RUN apt-get update && \
-    apt-get install -y curl python3 make g++ --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
-
-# Create a secure, unprivileged system user and group
+# Create the unprivileged user/group
 RUN addgroup --system --gid 1001 ops && \
     adduser --system --uid 1001 --ingroup ops ops
 
-# Set up the isolated working directory
+# Set the working directory
 WORKDIR /app
 
-# Copy the core package manifests and codebases
+# Copy packages
 COPY package*.json ./
 COPY packages/ ./packages/
 COPY services/search-server ./search-server/
 
-# Install and build all dependencies safely as root.
+# Install everything perfectly once as root (No scripts ignored, native modules build fine)
 RUN npm ci
 RUN npm run build
 
-# Navigate to the specific target service and build it
+# Change context to your service folder
 WORKDIR /app/search-server
-RUN npm run build
 
-# Hand over complete read/write/execute ownership of the application to 'ops'
+# Make sure the app folder is fully owned by the runtime user
 RUN chown -R ops:ops /app
-
-# Permanently drop root privileges—the container now runs entirely as 'ops'
 USER ops
 
 EXPOSE 4002
 
-# Run the compiled application
+# Run...
 CMD ["node", "dist/index.js"]
