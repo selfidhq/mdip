@@ -19,6 +19,7 @@ export interface ConnectionInfo {
     connection: HyperswarmConnection;
     peerName: string;
     nodeName: string;
+    did: string;
     lastSeen: number;
     capabilities: NegotiatedPeerCapabilities;
     syncMode: SyncMode | 'unknown';
@@ -33,6 +34,66 @@ export interface ConnectionInfo {
     legacyTransportQuarantined: boolean;
     inboundBuffer: Buffer;
     inboundReceiveChain: Promise<void>;
+}
+
+export interface MalformedPeerState {
+    strikes: number;
+    firstSeenAt: number;
+    lastSeenAt: number;
+    cooldownUntil: number;
+    lastReason: string;
+    rejectedConnections: number;
+    lastRejectLogAt: number;
+}
+
+export type PeerSessionMode = SyncMode | 'ordered_catchup';
+
+export interface PeerSyncSession {
+    sessionId: string;
+    peerKey: string;
+    mode: PeerSessionMode;
+    initiator: boolean;
+    windows: ReconciliationWindow[];
+    windowIndex: number;
+    windowId: string | null;
+    currentWindowStats: NegentropyWindowStats | null;
+    currentWindowSnapshot: NegentropyWindowSnapshot | null;
+    currentWindowEngine: NegentropyWindowEngine | null;
+    startedAt: number;
+    lastActivity: number;
+    pendingHaveIds: Set<string>;
+    pendingNeedIds: Set<string>;
+    unresolvedNeedIds: Set<string>;
+    unresolvedOperations: Map<string, Operation>;
+    rounds: number;
+    maxRounds: number;
+    reconciliationComplete: boolean;
+    localClosed: boolean;
+    receivedPushIds: Set<string>;
+    receivedKnownPushIds: Set<string>;
+    provenStoredPushIds: Set<string>;
+    receivedPushMaxCursor: SyncStoreCursor | null;
+    remoteWindowCappedByRecords: boolean;
+    remoteWindowLastCursor: SyncStoreCursor | null;
+    orderedCatchupCursor: SyncStoreOrderedCursor | null;
+    orderedCatchupPendingImports: number;
+    orderedCatchupRequestOutstanding: boolean;
+    orderedCatchupTerminalReason: 'ordered_catchup_complete' | 'ordered_catchup_done' | null;
+    orderedCatchupImportsAborted: boolean;
+}
+
+export interface ImportQueueTask {
+    name: string;
+    node?: string;
+    data: Operation[];
+    queueGossip?: boolean;
+    orderedCatchupSession?: PeerSyncSession;
+}
+
+export interface ImportQueueResult {
+    knownIds: string[];
+    persistedIds: string[];
+    retryable: boolean;
 }
 
 export interface ConnectionInfoOptions {
@@ -50,6 +111,7 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         connection: options.connection,
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
+        did: '',
         lastSeen: now,
         capabilities: {
             advertised: false,

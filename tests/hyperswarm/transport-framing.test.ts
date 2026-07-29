@@ -51,8 +51,30 @@ describe('hyperswarm transport framing', () => {
         expect(() => decodeFramedMessages(Buffer.alloc(0), 0)).toThrow('maxMessageBytes must be a positive integer');
     });
 
-    it('decodes one raw compatibility ping and leaves following framed bytes untouched', () => {
-        const ping = JSON.stringify({
+    it('identifies which message types remain legacy-transport compatible', () => {
+        expect(supportsLegacyRawTransportMessage('ping')).toBe(true);
+        expect(supportsLegacyRawTransportMessage('sync')).toBe(false);
+        expect(supportsLegacyRawTransportMessage('batch')).toBe(false);
+        expect(supportsLegacyRawTransportMessage('queue')).toBe(true);
+        expect(supportsLegacyRawTransportMessage('neg_open')).toBe(false);
+        expect(supportsLegacyRawTransportMessage('ops_push')).toBe(false);
+    });
+
+    it('decodes multiple legacy JSON messages from one chunk', () => {
+        const first = JSON.stringify({ type: 'ping', node: 'node-a' });
+        const second = JSON.stringify({ type: 'queue', node: 'node-b', relays: [], data: [] });
+        const decoded = decodeLegacyJsonMessages(Buffer.concat([
+            Buffer.from(first, 'utf8'),
+            Buffer.from(second, 'utf8'),
+        ]));
+
+        expect(decoded.error).toBeUndefined();
+        expect(decoded.remaining.length).toBe(0);
+        expect(decoded.messages.map(message => message.toString('utf8'))).toStrictEqual([first, second]);
+    });
+
+    it('ignores legacy whitespace and parses escaped string content', () => {
+        const payload = JSON.stringify({
             type: 'ping',
             node: 'old-node',
             transportFramingVersion: 1,

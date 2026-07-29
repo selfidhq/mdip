@@ -189,6 +189,7 @@ export function chooseSyncMode(
 export function chooseConnectSyncMode(
     capabilities: NegotiatedPeerCapabilities,
     requiredVersion: number,
+    negentropyEnabled = true,
     transportFramingSupported = true,
 ): ConnectSyncModeDecision {
     const unavailable = (reason: ConnectSyncModeReason): ConnectSyncModeDecision => ({
@@ -201,6 +202,10 @@ export function chooseConnectSyncMode(
             return unavailable('transport_framing_unsupported');
         }
         return { mode: 'negentropy', reason: 'negentropy_supported' };
+    }
+
+    if (!negentropyEnabled) {
+        return unavailable('negentropy_disabled');
     }
 
     if (!capabilities.advertised) {
