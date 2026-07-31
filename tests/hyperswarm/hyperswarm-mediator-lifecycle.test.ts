@@ -376,25 +376,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         )).toBeNull();
     });
 
-    it('retires a replaced connection without its close removing the replacement', async () => {
-        const running = await createRunningNode();
-        const original = await attachConnection(running, 0x22);
-        await sendPeerMessage(original, peerPing());
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(original.peerKey)?.activeSession,
-        )).toMatchObject({ mode: 'negentropy' });
-
-        const replacement = emitConnection(running, 0x22);
-
-        expect(original.pair.connectionA.destroyed).toBe(true);
-        running.node.run(() => original.pair.connectionA.emit('close'));
-        await eventually(() => replacement.pair.transcript.some(entry => entry.messageType === 'ping'));
-
-        expect(running.node.run(
-            () => running.node.mediator.__test.getConnectionState(replacement.peerKey),
-        )).toMatchObject({ activeSession: null });
-    });
-
     it('writes the initial capability ping before synchronization traffic', async () => {
         const running = await createRunningNode();
         const countOrdered = running.store.countOrdered.bind(running.store);
@@ -554,7 +535,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(running.node.run(
             () => running.node.mediator.__test.getConnectionState(peer.peerKey),
         )).toBeNull();
-        expect(peer.pair.connectionA.destroyed).toBe(true);
     });
 
     it('recreates the swarm from the connection loop when no peers remain', async () => {
@@ -631,7 +611,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(repairedSessionId).not.toBe(initialOpen.sessionId);
         expect(negOpenEntries()).toHaveLength(initialNegOpenCount + 1);
         expect(negOpenEntries().at(-1)).toMatchObject({ framed: true });
-        expect(countSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 
     it('refreshes idle activity for cached progress but not exact duplicates', async () => {

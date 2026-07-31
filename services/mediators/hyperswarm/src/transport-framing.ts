@@ -19,47 +19,6 @@ export interface DecodedLegacyJsonMessagesResult {
     error?: string;
 }
 
-export interface DecodedUnknownTransportMessagesResult {
-    transportMode: 'legacy' | 'framed' | null;
-    messages: Buffer[];
-    remaining: Buffer;
-    error?: string;
-    legacyError?: string;
-    framedError?: string;
-}
-
-export interface PendingBufferClassification {
-    firstByte: number | null;
-    startsWithJsonObject: boolean;
-    printablePrefix: string;
-}
-
-export function classifyPendingBuffer(buffer: Buffer): PendingBufferClassification {
-    let offset = 0;
-    while (offset < buffer.length) {
-        const byte = buffer[offset];
-        if (byte !== 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d) {
-            break;
-        }
-        offset += 1;
-    }
-
-    const firstByte = offset < buffer.length ? buffer[offset] : null;
-    const prefix = buffer.subarray(offset, Math.min(buffer.length, offset + 32));
-    const printablePrefix = prefix.toString('utf8').replace(/[^\x20-\x7e]/g, '.');
-
-    return {
-        firstByte,
-        startsWithJsonObject: firstByte === JSON_OBJECT_START,
-        printablePrefix,
-    };
-}
-
-export function supportsLegacyRawTransportMessage(messageType: string): boolean {
-    return messageType === 'ping'
-        || messageType === 'queue';
-}
-
 function isJsonWhitespace(byte: number): boolean {
     return byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d;
 }
