@@ -117,8 +117,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             name: `lifecycle-node-${++nodeNumber}`,
             publicKey: Buffer.alloc(32, options.keyByte ?? 0x11),
             env: {
-                KC_HYPR_NEGENTROPY_ENABLE: 'true',
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'false',
                 KC_HYPR_NEGENTROPY_MAX_RECORDS_PER_WINDOW: '16',
                 KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION: '8',
                 KC_HYPR_NEGENTROPY_INTERVAL: '1',
@@ -726,7 +724,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             keyByte: 0x33,
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
             },
         });
         const peer = await attachConnection(running, 0x22);
@@ -844,7 +841,6 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             keyByte: 0x33,
             env: {
                 KC_HYPR_EXPORT_INTERVAL: '3600',
-                KC_HYPR_ORDERED_CATCHUP_ENABLE: 'true',
             },
         });
         await running.store.upsertMany(operations.map((operation, index) => ({

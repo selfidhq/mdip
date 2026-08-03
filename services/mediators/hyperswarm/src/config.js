@@ -28,19 +28,6 @@ function parseFrameSizeLimit() {
     return valueKb * 1024;
 }
 
-function parseStatusPort() {
-    const raw = process.env.KC_HYPR_STATUS_PORT;
-    if (raw == null || raw === '') {
-        return 4003;
-    }
-
-    const port = Number(raw);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new Error('Invalid KC_HYPR_STATUS_PORT; expected an integer from 1 to 65535');
-    }
-    return port;
-}
-
 function parseSyncDbEnv() {
     const normalized = process.env.KC_HYPR_DB?.trim().toLowerCase();
     if (!normalized) {
@@ -71,7 +58,6 @@ const config = {
     negentropyMaxRecordsPerWindow,
     negentropyMaxRoundsPerSession: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_MAX_ROUNDS_PER_SESSION', 64),
     negentropyIntervalSeconds: parsePositiveIntEnv('KC_HYPR_NEGENTROPY_INTERVAL', 300),
-    orderedCatchupEnabled: parseBooleanEnv('KC_HYPR_ORDERED_CATCHUP_ENABLE', true),
     db: parseSyncDbEnv(),
     postgresURL: process.env.KC_HYPR_POSTGRES_URL
         || process.env.KC_POSTGRES_URL

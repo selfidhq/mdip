@@ -149,21 +149,6 @@ describe('negentropy protocol helpers', () => {
         });
     });
 
-    it('builds disabled ordered catch-up capabilities without a protocol version', () => {
-        expect(buildOrderedCatchupCapabilities({
-            enabled: false,
-            version: 1,
-            operationCount: 3,
-            orderedOperationCount: 3,
-        })).toStrictEqual({
-            orderedCatchup: false,
-            orderedCatchupVersion: undefined,
-            orderedCatchupReady: false,
-            operationCount: 3,
-            orderedOperationCount: 3,
-        });
-    });
-
     it('chooses connect sync mode with explicit unavailability reasons', () => {
         const missing = normalizePeerCapabilities();
         expect(chooseConnectSyncMode(missing, currentNegentropyVersion)).toStrictEqual({
@@ -198,10 +183,6 @@ describe('negentropy protocol helpers', () => {
             reason: 'negentropy_supported',
         });
         expect(chooseConnectSyncMode(supported, currentNegentropyVersion, false)).toStrictEqual({
-            mode: null,
-            reason: 'negentropy_disabled',
-        });
-        expect(chooseConnectSyncMode(supported, currentNegentropyVersion, true, false)).toStrictEqual({
             mode: null,
             reason: 'transport_framing_unsupported',
         });
