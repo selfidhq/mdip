@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1
+# Use the official Node.js as the base image
+FROM node:22.15.0-bookworm-slim
 
-FROM node:22.15.0-bookworm-slim AS builder
-
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system --gid 1001 ops
+RUN adduser --system --uid 1001 ops
 
 WORKDIR /app
 
@@ -11,20 +11,15 @@ COPY packages/ ./packages/
 COPY services/mediators/satoshi-inscription/package*.json ./satoshi/
 COPY services/mediators/satoshi-inscription/patches/ ./satoshi/patches/
 
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
-RUN --mount=type=cache,target=/root/.npm cd satoshi && npm ci
+# Install dependencies
+RUN npm ci
+RUN npm rebuild sqlite3
+RUN npm run build
 
 COPY services/mediators/satoshi-inscription ./satoshi/
 
-RUN npm rebuild sqlite3
-RUN npm run build
-RUN cd satoshi && npm run build
+RUN chown -R ops:ops /app
+USER ops
 
-FROM node:22.15.0-bookworm-slim
-
-WORKDIR /app
-COPY --from=builder /app /app
-
-WORKDIR /app/satoshi
-
+# Run...
 CMD ["node", "dist/inscription-mediator.js"]
