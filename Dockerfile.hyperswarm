@@ -1,35 +1,37 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Build & Compile Stage
+
+# Stage 1: Build Stage
 FROM node:22.15.0-bookworm-slim AS builder
 
-WORKDIR /app
-
-# Install native build tools (needed only during compilation)
+# Install build dependencies required for native sqlite3 compilation
 RUN apt-get update && \
     apt-get install -y python3 make g++ --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# 1. Copy dependency manifests first to maximize Docker cache hits
+WORKDIR /app
+
+# 1. Copy package manifests first (Root, shared packages, and Hyperswarm)
 COPY package*.json ./
 COPY packages/ ./packages/
+COPY services/mediators/hyperswarm/package*.json ./hyperswarm/
 
-# 2. Install dependencies with persistent npm cache
+# 2. Install dependencies with persistent BuildKit caching
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --ignore-scripts
 
-# 3. Rebuild native modules
-RUN npm rebuild sqlite3
+RUN --mount=type=cache,target=/root/.npm \
+    cd hyperswarm && npm ci
 
-# 4. Copy source code AFTER dependencies are installed
-# Changes to hyperswarm source will no longer trigger npm ci or npm rebuild
+# 3. Copy service source code AFTER dependency installation
 COPY services/mediators/hyperswarm ./hyperswarm/
 
-# 5. Build application binaries/dist
-RUN npm run build
+# 4. Rebuild native binaries and compile build outputs
+RUN npm rebuild sqlite3 && npm run build
+RUN cd hyperswarm && npm run build
 
 
-# Stage 2: Lean Production Runtime Stage
+# Stage 2: Production Runtime Stage
 FROM node:22.15.0-bookworm-slim AS runner
 
 # Create non-root user early
@@ -38,8 +40,7 @@ RUN addgroup --system --gid 1001 ops && \
 
 WORKDIR /app
 
-# Copy built application directly with correct permissions
-# Prevents duplicating image size via `RUN chown -R`
+# Copy application files and grant permissions in a single zero-overhead step
 COPY --chown=ops:ops --from=builder /app /app
 
 WORKDIR /app/hyperswarm
