@@ -69,7 +69,6 @@ export interface ImportPipelineOptions {
     syncStore: OperationSyncStore;
     cipher: Pick<CipherNode, 'canonicalizeJSON' | 'hashJSON'>;
     syncStats: MediatorSyncStats;
-    beginStoreMutation(source: string): () => void;
     onStoreChanged(source: string): void;
 }
 
@@ -99,7 +98,6 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         syncStore,
         cipher,
         syncStats,
-        beginStoreMutation,
         onStoreChanged,
     } = options;
     const pendingSyncRecords = new Map<string, SyncOperationWriteRecord>();
@@ -202,8 +200,6 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         }
 
         let result;
-        const storeChangeSource = `persist_${source}`;
-        const finishStoreMutation = beginStoreMutation(storeChangeSource);
         try {
             result = await syncStore.upsertMany(attemptedRecords);
         }
@@ -234,9 +230,6 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
             );
             throw error;
         }
-        finally {
-            finishStoreMutation();
-        }
 
         for (const record of attemptedRecords) {
             if (pendingSyncRecords.get(record.id) === record) {
@@ -257,7 +250,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
         );
 
         if (result.inserted > 0 || result.updated > 0) {
-            onStoreChanged(storeChangeSource);
+            onStoreChanged(`persist_${source}`);
         }
         log.debug(
             {
@@ -478,9 +471,7 @@ export function createImportPipeline(options: ImportPipelineOptions): ImportPipe
     }
 
     async function runIndexRefresh(source: string): Promise<BootstrapResult> {
-        const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper, {
-            beginStoreMutation: () => beginStoreMutation(`refresh_${source}`),
-        });
+        const sync = await bootstrapSyncStoreFromGatekeeper(syncStore, gatekeeper);
         if (sync.resetReason) {
             pendingSyncRecords.clear();
             terminalOperationCids.clear();

@@ -82,20 +82,6 @@ export interface PeerSyncSession {
     orderedCatchupImportsAborted: boolean;
 }
 
-export interface ImportQueueTask {
-    name: string;
-    node?: string;
-    data: Operation[];
-    queueGossip?: boolean;
-    orderedCatchupSession?: PeerSyncSession;
-}
-
-export interface ImportQueueResult {
-    knownIds: string[];
-    persistedIds: string[];
-    retryable: boolean;
-}
-
 export interface ConnectionInfoOptions {
     connection: HyperswarmConnection;
     peerName: string;
