@@ -294,7 +294,21 @@ export default class DbPostgres implements GatekeeperDb {
             return;
         }
 
-        this.pool = new Pool({ connectionString: this.url });
+        this.pool = new Pool({ 
+            connectionString: this.url,
+            //Enable TCP keep-alives to prevent GCP network silent drops
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 10000, // Send a keep-alive probe every 10s
+            idleTimeoutMillis: 30000,          // Close connections idle for 30s
+            maxLifetimeSeconds: 300,            // Re-create connections older than 5 minutes
+            connectionTimeoutMillis: 3000,      // Fail fast if connecting to DB takes >3s
+        });
+
+        //Catch idle connection resets so they don't throw unhandled errors
+        this.pool.on('error', (err) => {
+            console.warn('[DbPostgres] Unexpected error on idle DB client in pool:', err.message);
+        });
+
         await this.withTx(async client => {
             await this.ensureSchema(client);
             await this.ensureIndexEpoch(client);
