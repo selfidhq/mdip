@@ -1,12 +1,6 @@
 # syntax=docker/dockerfile:1
-<<<<<<< HEAD
-=======
-
-FROM node:22.15.0-bullseye-slim AS builder
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 
 
-<<<<<<< HEAD
 # Stage 1: Build Stage
 FROM node:22.15.0-bookworm-slim AS builder
 
@@ -25,17 +19,6 @@ COPY services/mediators/satoshi-inscription/package*.json ./satoshi/
 # 2. Install dependencies with persistent BuildKit caching
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
-=======
-WORKDIR /app
-
-COPY package*.json ./
-COPY packages/ ./packages/
-COPY services/mediators/satoshi-inscription/package*.json ./satoshi/
-COPY services/mediators/satoshi-inscription/patches/ ./satoshi/patches/
-
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
-RUN --mount=type=cache,target=/root/.npm cd satoshi && npm ci
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 
 RUN --mount=type=cache,target=/root/.npm \
     cd satoshi && npm ci
@@ -43,7 +26,6 @@ RUN --mount=type=cache,target=/root/.npm \
 # 3. Copy service source code AFTER dependency installation
 COPY services/mediators/satoshi-inscription ./satoshi/
 
-<<<<<<< HEAD
 # 4. Rebuild native binaries and compile build outputs
 RUN npm rebuild sqlite3 && npm run build
 RUN cd satoshi && npm run build
@@ -65,17 +47,3 @@ WORKDIR /app/satoshi
 USER ops
 
 CMD ["node", "dist/inscription-mediator.js"]
-=======
-RUN npm rebuild sqlite3
-RUN npm run build
-RUN cd satoshi && npm run build
-
-FROM node:22.15.0-bullseye-slim
-
-WORKDIR /app
-COPY --from=builder /app /app
-
-WORKDIR /app/satoshi
-
-CMD ["node", "dist/inscription-mediator.js"]
->>>>>>> upstream/bush/postgres-readiness-pool-logging

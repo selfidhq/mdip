@@ -1,27 +1,16 @@
 # syntax=docker/dockerfile:1
-<<<<<<< HEAD
-=======
-
-FROM node:22.15.0-bullseye-slim AS builder
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 
 
-<<<<<<< HEAD
 # Stage 1: Build Stage
 FROM node:22.15.0-bullseye-slim AS builder
 
 WORKDIR /app
 
 # 1. Copy package manifests first (Root and search-server)
-=======
-WORKDIR /app
-
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 COPY package*.json ./
 COPY packages/ ./packages/
 COPY services/search-server/package*.json ./search-server/
 
-<<<<<<< HEAD
 # 2. Install dependencies deterministically with BuildKit caching
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
@@ -52,31 +41,9 @@ WORKDIR /app
 # Copy application files with user permissions assigned in a single zero-cost step
 COPY --chown=ops:ops --from=builder /app /app
 
-=======
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
-RUN --mount=type=cache,target=/root/.npm cd search-server && npm ci
-
-COPY services/search-server ./search-server/
-
-RUN npm rebuild sqlite3
-RUN npm run build
-RUN cd search-server && npm run build
-
-FROM node:22.15.0-bullseye-slim
-
-WORKDIR /app
-COPY --from=builder /app /app
-RUN chown -R node:node /app/search-server
-
-USER node
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 WORKDIR /app/search-server
 
 EXPOSE 4002
 USER ops
 
-<<<<<<< HEAD
 CMD ["node", "dist/index.js"]
-=======
-CMD ["node", "dist/index.js"]
->>>>>>> upstream/bush/postgres-readiness-pool-logging

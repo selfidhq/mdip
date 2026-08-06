@@ -1,12 +1,6 @@
 # syntax=docker/dockerfile:1
-<<<<<<< HEAD
-=======
-
-FROM node:22.15.0-bullseye-slim AS builder
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 
 
-<<<<<<< HEAD
 # Stage 1: Build & Compile Stage
 FROM node:22.15.0-bookworm-slim AS builder
 
@@ -19,15 +13,10 @@ WORKDIR /app
 
 # 1. Copy ALL package manifests first (Root, Client, and Server)
 # This creates a solid layer lock for npm dependencies across all subprojects
-=======
-WORKDIR /app
-
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 COPY package*.json ./
 COPY packages/ ./packages/
 COPY services/keymaster/client/package*.json ./keymaster/client/
 COPY services/keymaster/server/package*.json ./keymaster/server/
-<<<<<<< HEAD
 
 # 2. Install all dependencies using persistent BuildKit caching
 RUN --mount=type=cache,target=/root/.npm \
@@ -59,30 +48,8 @@ WORKDIR /app
 
 # Copy application artifacts with user ownership applied instantly
 COPY --chown=ops:ops --from=builder /app /app
-=======
-
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
-RUN --mount=type=cache,target=/root/.npm cd keymaster/client && npm ci --include=dev
-RUN --mount=type=cache,target=/root/.npm cd keymaster/server && npm ci
-
-COPY services/keymaster ./keymaster/
-
-RUN npm rebuild sqlite3
-RUN npm run build
-RUN cd keymaster/client && npm run build
-RUN cd keymaster/server && npm run build
-
-FROM node:22.15.0-bullseye-slim
-
-WORKDIR /app
-COPY --from=builder /app /app
->>>>>>> upstream/bush/postgres-readiness-pool-logging
 
 WORKDIR /app/keymaster
 USER ops
 
-<<<<<<< HEAD
 CMD ["node", "server/dist/keymaster-api.js"]
-=======
-CMD ["node", "server/dist/keymaster-api.js"]
->>>>>>> upstream/bush/postgres-readiness-pool-logging
