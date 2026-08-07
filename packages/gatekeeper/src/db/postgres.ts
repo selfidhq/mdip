@@ -19,7 +19,6 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
-import { withHealthCheckTimeout } from './health.js';
 
 const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
 
