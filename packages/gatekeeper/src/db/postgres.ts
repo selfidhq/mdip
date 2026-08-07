@@ -304,12 +304,12 @@ export default class DbPostgres implements GatekeeperDb {
             keepAliveInitialDelayMillis: 10000, // Send a keep-alive probe every 10s
             idleTimeoutMillis: 30000,          // Close connections idle for 30s
             maxLifetimeSeconds: 300,            // Re-create connections older than 5 minutes
-            connectionTimeoutMillis: 3000,      // Fail fast if connecting to DB takes >3s
+            connectionTimeoutMillis: 750,      // Fail fast if connecting to DB takes >3s
         });
 
-        //Catch idle connection resets so they don't throw unhandled errors
+        // Prevent background pool reset crashes
         this.pool.on('error', (err) => {
-            console.warn('[DbPostgres] Unexpected error on idle DB client in pool:', err.message);
+            console.warn('[DbPostgres] Idle client error in pool:', err.message);
         });
 
         await this.withTx(async client => {
@@ -330,14 +330,37 @@ export default class DbPostgres implements GatekeeperDb {
             return false;
         }
 
+        let client: PoolClient | null = null;
         try {
-            await withHealthCheckTimeout(
-                this.pool.query('SELECT 1'),
-                'Postgres readiness check timed out'
-            );
+            // 1. Connection acquisition times out at 750ms via pool config
+            client = await this.pool.connect();
+
+            // 2. Wrap SELECT 1 in a dedicated 800ms timer
+            await new Promise<void>((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error('isReady health check query timed out'));
+                }, 800);
+
+                client!.query('SELECT 1')
+                    .then(() => {
+                        clearTimeout(timer);
+                        resolve();
+                    })
+                    .catch((err) => {
+                        clearTimeout(timer);
+                        reject(err);
+                    });
+            });
+
             return true;
-        }
-        catch (error) {
+        } catch (error) {
+            if (client) {
+                // Destroy the socket so it doesn't leak or remain stuck in idle: 0
+                client.release(error as Error);
+                client = null;
+            }
+
+            // Log pool stats BEFORE returning false
             log.warn({
                 error,
                 pool: {
@@ -346,7 +369,12 @@ export default class DbPostgres implements GatekeeperDb {
                     waiting: this.pool.waitingCount,
                 },
             }, 'Postgres readiness check failed');
+
             return false;
+        } finally {
+            if (client) {
+                client.release();
+            }
         }
     }
 
