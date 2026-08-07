@@ -353,15 +353,16 @@ export default class DbPostgres implements GatekeeperDb {
 
             return true;
         } catch (error) {
+            const err = error as Error;
             if (client) {
-                // Destroy the socket so it doesn't leak or remain stuck in idle: 0
-                client.release(error as Error);
+                // Destroy the socket so it doesn't leak or stay in idle: 0
+                client.release(err);
                 client = null;
             }
 
-            // Log pool stats BEFORE returning false
             log.warn({
-                error,
+                errMessage: err.message,
+                errStack: err.stack,
                 pool: {
                     total: this.pool.totalCount,
                     idle: this.pool.idleCount,
@@ -370,6 +371,7 @@ export default class DbPostgres implements GatekeeperDb {
             }, 'Postgres readiness check failed');
 
             return false;
+            
         } finally {
             if (client) {
                 client.release();
