@@ -263,7 +263,14 @@ export async function exportIndexWithReadiness(
     db: Pick<GatekeeperDb, 'isReady' | 'exportIndexSnapshot' | 'exportIndexChanges'>,
     request: IndexExportRequest
 ): Promise<IndexExportResponse> {
-    if (!await db.isReady()) {
+    let ready = await db.isReady();
+
+    if (!ready) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        ready = await db.isReady();
+    }
+
+    if (!ready) {
         throw new DatabaseUnavailableError();
     }
 
