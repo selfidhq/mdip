@@ -303,7 +303,7 @@ export default class DbPostgres implements GatekeeperDb {
             keepAliveInitialDelayMillis: 10000, // Send a keep-alive probe every 10s
             idleTimeoutMillis: 30000,          // Close connections idle for 30s
             maxLifetimeSeconds: 300,            // Re-create connections older than 5 minutes
-            connectionTimeoutMillis: 750,      // Fail fast if connecting to DB takes >3s
+            connectionTimeoutMillis: 2000,      // Fail fast if connecting to DB takes >3s
         });
 
         // Prevent background pool reset crashes
@@ -338,7 +338,7 @@ export default class DbPostgres implements GatekeeperDb {
             await new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     reject(new Error('isReady health check query timed out'));
-                }, 800);
+                }, 1000);
 
                 client!.query('SELECT 1')
                     .then(() => {
@@ -371,7 +371,7 @@ export default class DbPostgres implements GatekeeperDb {
             }, 'Postgres readiness check failed');
 
             return false;
-            
+
         } finally {
             if (client) {
                 client.release();

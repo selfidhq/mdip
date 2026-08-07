@@ -266,7 +266,7 @@ export async function exportIndexWithReadiness(
     let ready = await db.isReady();
 
     if (!ready) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 250));
         ready = await db.isReady();
     }
 
