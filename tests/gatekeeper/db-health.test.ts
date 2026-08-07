@@ -124,6 +124,24 @@ describe('database readiness checks', () => {
         }
     });
 
+    it('rejects an invalid Postgres connection timeout', async () => {
+        const previous = process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+        process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = '0';
+
+        try {
+            await expect(new DbPostgres('invalid-connection-timeout').start())
+                .rejects.toThrow('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
+        }
+        finally {
+            if (previous === undefined) {
+                delete process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS;
+            }
+            else {
+                process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS = previous;
+            }
+        }
+    });
+
     it('bounds health checks with a timeout', async () => {
         await expect(withHealthCheckTimeout(
             new Promise(() => undefined),

@@ -21,6 +21,8 @@ import {
 } from './index-export.js';
 
 const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
+const DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS = 3_000;
+const POSTGRES_HEALTH_QUERY_TIMEOUT_MS = 1_000;
 
 interface EventRow {
     event: GatekeeperEvent | string | null;
@@ -300,9 +302,16 @@ export default class DbPostgres implements GatekeeperDb {
         if (!Number.isSafeInteger(max) || max < 1) {
             throw new Error('KC_POSTGRES_POOL_MAX must be a positive integer');
         }
+        const connectionTimeoutMillis = Number(
+            process.env.KC_POSTGRES_CONNECTION_TIMEOUT_MS ?? DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS
+        );
+        if (!Number.isSafeInteger(connectionTimeoutMillis) || connectionTimeoutMillis < 1) {
+            throw new Error('KC_POSTGRES_CONNECTION_TIMEOUT_MS must be a positive integer');
+        }
         this.pool = new Pool({
             connectionString: this.url,
             max,
+            connectionTimeoutMillis,
         });
         await this.withTx(async client => {
             await this.ensureSchema(client);
@@ -322,28 +331,20 @@ export default class DbPostgres implements GatekeeperDb {
             return false;
         }
 
-        let client: PoolClient | null = null;
+        const healthQuery = {
+            text: 'SELECT 1',
+            query_timeout: POSTGRES_HEALTH_QUERY_TIMEOUT_MS,
+        };
+        const healthTimeoutMs = (this.pool.options.connectionTimeoutMillis
+            ?? DEFAULT_POSTGRES_CONNECTION_TIMEOUT_MS)
+            + POSTGRES_HEALTH_QUERY_TIMEOUT_MS;
+
         try {
-            // 1. Connection acquisition times out at 750ms via pool config
-            client = await this.pool.connect();
-
-            // 2. Wrap SELECT 1 in a dedicated 800ms timer
-            await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => {
-                    reject(new Error('isReady health check query timed out'));
-                }, 1000);
-
-                client!.query('SELECT 1')
-                    .then(() => {
-                        clearTimeout(timer);
-                        resolve();
-                    })
-                    .catch((err) => {
-                        clearTimeout(timer);
-                        reject(err);
-                    });
-            });
-
+            await withHealthCheckTimeout(
+                this.pool.query(healthQuery),
+                'Postgres readiness check timed out',
+                healthTimeoutMs
+            );
             return true;
         } catch (error) {
             const err = error as Error;
@@ -354,9 +355,10 @@ export default class DbPostgres implements GatekeeperDb {
             }
 
             log.warn({
-                errMessage: err.message,
-                errStack: err.stack,
+                err: error,
                 pool: {
+                    max: this.pool.options.max,
+                    connectionTimeoutMillis: this.pool.options.connectionTimeoutMillis,
                     total: this.pool.totalCount,
                     idle: this.pool.idleCount,
                     waiting: this.pool.waitingCount,
