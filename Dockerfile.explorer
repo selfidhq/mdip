@@ -18,7 +18,7 @@ ARG VITE_SEARCH_SERVER
 
 ENV VITE_EXPLORER_PORT=${VITE_EXPLORER_PORT}
 ENV VITE_GATEKEEPER_URL=${VITE_GATEKEEPER_URL}
-ENV VITE_SEARCH_SERVER=http://development-search.mastodon-bushi.ts.net:4002
+ENV VITE_SEARCH_SERVER=http://development-search-active-dev.mastodon-bushi.ts.net:4002
 
 # Install dependencies
 RUN npm ci --ignore-scripts
