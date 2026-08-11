@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Server } from 'http';
 import { BlockList, isIP } from 'net';
+import { trace } from '@opentelemetry/api';
 
 import type { GatekeeperDb, IndexExportRequest, IndexExportResponse } from '@mdip/gatekeeper/types';
 import { childLogger } from '@mdip/common/logger';
@@ -72,6 +73,7 @@ export async function drainServer(
 
 export function logRequest(req: Request, res: Response, next: NextFunction): void {
     const startTime = process.hrtime.bigint();
+    const spanContext = trace.getActiveSpan()?.spanContext();
 
     res.on('finish', () => {
         const durationMs = Number(process.hrtime.bigint() - startTime) / 1e6;
@@ -81,14 +83,21 @@ export function logRequest(req: Request, res: Response, next: NextFunction): voi
             : (typeof contentLength === 'string' ? contentLength : '-');
         const msg = `${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs.toFixed(3)} ms - ${size}`;
 
+        const bindings = spanContext
+            ? {
+                trace_id: spanContext.traceId,
+                span_id: spanContext.spanId,
+            }
+            : {};
+
         if (res.statusCode >= 500) {
-            log.error(msg);
+            log.error(bindings, msg);
         }
         else if (res.statusCode >= 400) {
-            log.warn(msg);
+            log.warn(bindings, msg);
         }
         else {
-            log.info(msg);
+            log.info(bindings, msg);
         }
     });
 
