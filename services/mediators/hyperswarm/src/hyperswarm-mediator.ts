@@ -1171,6 +1171,20 @@ async function checkConnections(): Promise<void> {
     if (transport.getPeerKeys().length === 0) {
         log.warn("No active connections, rejoining the topic...");
         await createSwarm();
+        return;
+    }
+
+    const expireLimit = 3 * 60 * 1000; // 3 minutes in milliseconds
+    const now = Date.now();
+
+    for (const peerKey in connectionInfo) {
+        const conn = connectionInfo[peerKey];
+        const timeSinceLastSeen = now - conn.lastSeen;
+
+        if (timeSinceLastSeen > expireLimit) {
+            log.info(`Removing stale connection info for: ${conn.peerName} (${conn.nodeName}), last seen ${timeSinceLastSeen / 1000}s ago`);
+            terminatePeerConnection(peerKey, 'stale_connection', conn);
+        }
     }
 }
 
