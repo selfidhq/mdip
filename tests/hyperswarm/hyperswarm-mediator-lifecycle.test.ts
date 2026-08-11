@@ -609,6 +609,7 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(repairedSessionId).not.toBe(initialOpen.sessionId);
         expect(negOpenEntries()).toHaveLength(initialNegOpenCount + 1);
         expect(negOpenEntries().at(-1)).toMatchObject({ framed: true });
+        expect(countSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 
     it('refreshes idle activity for cached progress but not exact duplicates', async () => {
@@ -1184,6 +1185,56 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
         expect(countNegOpenMessages(peer)).toBeGreaterThan(initialNegOpenCount);
     });
 
+    it('keeps a pending peer-sync reservation while applying a Gatekeeper reset', async () => {
+        const [oldOperation, newOperation] = await makeOperations(2);
+        let resetSpy!: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;
+        const running = await createRunningNode({
+            beforeStart: async (node, store) => {
+                resetSpy = jest.spyOn(store, 'reset');
+                await node.gatekeeper.createDID(oldOperation);
+            },
+        });
+        const peer = await attachConnection(running, 0x22);
+        const count = running.store.count.bind(running.store);
+        let markCountStarted!: () => void;
+        const countStarted = new Promise<void>(resolve => {
+            markCountStarted = resolve;
+        });
+        let releaseCount!: () => void;
+        const countBlocked = new Promise<void>(resolve => {
+            releaseCount = resolve;
+        });
+        jest.spyOn(running.store, 'count').mockImplementationOnce(async () => {
+            markCountStarted();
+            await countBlocked;
+            return count();
+        });
+        let timerAdvance: Promise<void> | null = null;
+        const pendingPing = sendPeerMessage(peer, peerPing());
+
+        try {
+            await countStarted;
+            await running.node.gatekeeper.resetDb();
+            await running.node.gatekeeper.createDID(newOperation);
+            timerAdvance = running.node.run(() => jest.advanceTimersByTimeAsync(2_000));
+            await eventually(() => resetSpy.mock.calls.length === 1);
+            await timerAdvance;
+
+            expect(countNegOpenMessages(peer)).toBe(0);
+
+            releaseCount();
+            await pendingPing;
+            await eventually(() => countNegOpenMessages(peer) === 1);
+
+            expect(countNegOpenMessages(peer)).toBe(1);
+        }
+        finally {
+            releaseCount();
+            await pendingPing.catch(() => undefined);
+            await timerAdvance?.catch(() => undefined);
+        }
+    });
+
     it('does not restart synchronization when an index reset finishes during shutdown', async () => {
         const [operation] = await makeOperations(1);
         let resetSpy!: jest.SpiedFunction<InMemoryOperationSyncStore['reset']>;
@@ -1727,6 +1778,51 @@ describe('hyperswarm mediator startup and lifecycle characterization', () => {
             releaseBuild();
             await timerAdvance?.catch(() => undefined);
             await shuttingDown?.catch(() => undefined);
+        }
+    });
+
+    it('drains a pending peer-sync decision before stopping the store', async () => {
+        const running = await createRunningNode();
+        const peer = await attachConnection(running, 0x22);
+        const count = running.store.count.bind(running.store);
+        let markCountStarted!: () => void;
+        const countStarted = new Promise<void>(resolve => {
+            markCountStarted = resolve;
+        });
+        let releaseCount!: () => void;
+        const countBlocked = new Promise<void>(resolve => {
+            releaseCount = resolve;
+        });
+        jest.spyOn(running.store, 'count').mockImplementationOnce(async () => {
+            markCountStarted();
+            await countBlocked;
+            return count();
+        });
+        const shutdown = running.node.run(() => getMediatorNodeContext().shutdownHook);
+        if (!shutdown) {
+            throw new Error('expected graceful shutdown callback');
+        }
+
+        const ping = sendPeerMessage(peer, peerPing());
+        await countStarted;
+        const shuttingDown = Promise.resolve(running.node.run(() => shutdown()));
+        try {
+            await nextTurn();
+            expect(running.stopSpy).not.toHaveBeenCalled();
+
+            releaseCount();
+            await ping;
+            await shuttingDown;
+
+            expect(running.stopSpy).toHaveBeenCalledTimes(1);
+            running.node.run(() => {
+                getMediatorNodeContext().shutdownHook = null;
+            });
+        }
+        finally {
+            releaseCount();
+            await ping.catch(() => undefined);
+            await shuttingDown.catch(() => undefined);
         }
     });
 
