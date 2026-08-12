@@ -497,6 +497,7 @@ export function createHyperswarmTransport(options: HyperswarmTransportOptions) {
 
         const state = createConnectionInfo({
             connection,
+            peerKey,
             peerName,
             requireInitialPing: true,
         });

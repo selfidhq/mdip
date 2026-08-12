@@ -27,6 +27,7 @@ describe('hyperswarm transport routing', () => {
         });
         transport.setConnection(peerKey, createConnectionInfo({
             connection,
+            peerKey,
             peerName: 'peer',
         }));
 

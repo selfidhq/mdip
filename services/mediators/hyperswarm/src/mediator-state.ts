@@ -36,16 +36,6 @@ export interface ConnectionInfo {
     inboundReceiveChain: Promise<void>;
 }
 
-export interface MalformedPeerState {
-    strikes: number;
-    firstSeenAt: number;
-    lastSeenAt: number;
-    cooldownUntil: number;
-    lastReason: string;
-    rejectedConnections: number;
-    lastRejectLogAt: number;
-}
-
 export interface ConnectionInfoOptions {
     connection: HyperswarmConnection;
     peerName: string;
