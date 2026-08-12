@@ -19,6 +19,7 @@ import {
     normalizeIndexExportLimit,
     parseIndexExportCursor
 } from './index-export.js';
+import { withHealthCheckTimeout } from './health.js';
 
 const log = childLogger({ service: 'gatekeeper-db', module: 'postgres' });
 const DEFAULT_POSTGRES_POOL_MAX = 10;
@@ -386,14 +387,8 @@ export default class DbPostgres implements GatekeeperDb {
                 healthTimeoutMs
             );
             return true;
-        } catch (error) {
-            const err = error as Error;
-            if (client) {
-                // Destroy the socket so it doesn't leak or stay in idle: 0
-                client.release(err);
-                client = null;
-            }
-
+        }
+        catch (error) {
             log.warn({
                 err: error,
                 pool: {
@@ -408,13 +403,7 @@ export default class DbPostgres implements GatekeeperDb {
                     waiting: this.pool.waitingCount,
                 },
             }, 'Postgres readiness check failed');
-
             return false;
-
-        } finally {
-            if (client) {
-                client.release();
-            }
         }
     }
 
