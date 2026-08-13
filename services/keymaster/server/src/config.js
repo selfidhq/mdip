@@ -105,7 +105,7 @@ const config = {
     db: parseDatabase(process.env.KC_KEYMASTER_DB),
     keymasterPassphrase: parseRequired('KC_ENCRYPTED_PASSPHRASE', process.env.KC_ENCRYPTED_PASSPHRASE),
     defaultRegistry: process.env.KC_DEFAULT_REGISTRY,
-    didPrefix: parseDidPrefix(process.env.KC_KEYMASTER_DID_PREFIX),
+    didPrefix: process.env.KC_KEYMASTER_DID_PREFIX || undefined,
     keymasterTrustProxy: parseBoolean(process.env.KC_KEYMASTER_TRUST_PROXY, false),
     rateLimitEnabled: parseBoolean(process.env.KC_KEYMASTER_RATE_LIMIT_ENABLED, false),
     rateLimitWindowValue: parsePositiveInteger(process.env.KC_KEYMASTER_RATE_LIMIT_WINDOW_VALUE, 1),
