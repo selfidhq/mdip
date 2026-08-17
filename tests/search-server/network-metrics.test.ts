@@ -262,6 +262,20 @@ describe('network metric snapshot builder', () => {
         });
     });
 
+    it('ignores histories without a create anchor', async () => {
+        const did = 'did:test:orphan';
+        const result = await buildNetworkMetricSnapshots([{
+            did,
+            events: [createEvent(did, { type: 'update', did })],
+        }], new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 0,
+            agentDidCount: 0,
+            credentialCount: 0,
+        });
+    });
+
     it('builds snapshots only for the configured network', async () => {
         const testHolder = 'did:test:test-holder';
         const mdipHolder = 'did:mdip:mdip-holder';
@@ -304,6 +318,25 @@ describe('network metric snapshot builder', () => {
         expect(unfiltered.snapshots.at(-1)?.didCount).toBe(6);
         expect((test.snapshots.at(-1)?.didCount ?? 0) + (mdip.snapshots.at(-1)?.didCount ?? 0))
             .toBe(unfiltered.snapshots.at(-1)?.didCount);
+    });
+
+    it('excludes schemas outside the configured credential network', async () => {
+        const holderDid = 'did:test:holder';
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(holderDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(holderDid, 'did:test:credential', {
+                    schemaDid: 'did:mdip:schema',
+                }),
+            ]),
+            createCredentialHistory('did:test:credential', '2026-08-01T00:00:00.000Z'),
+            createCredentialHistory('did:mdip:schema', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'), 'did:test');
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:test': 1 },
+            schemas: [],
+        });
     });
 
     it('uses manifest prefixes only when asset operations do not identify the network', async () => {
