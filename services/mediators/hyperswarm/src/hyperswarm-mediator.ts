@@ -295,17 +295,6 @@ function createSessionId(peerKey: string): string {
     return `${Date.now().toString(36)}-${shortName(nodeKey)}-${shortName(peerKey)}-${nonce}`;
 }
 
-function expireIdlePeerSessions(): void {
-    const now = Date.now();
-    negentropyCoordinator.expire(now);
-    orderedCatchupCoordinator.expire(now);
-}
-
-async function syncGatekeeperIndexToStore(source: string): Promise<void> {
-    const sync = await importPipeline.refreshIndex(source);
-    await peerSyncCoordinator.handleIndexRefreshed(source, sync);
-}
-
 async function waitForInitialGatekeeperIndexSync(): Promise<void> {
     while (true) {
         try {
@@ -322,7 +311,8 @@ async function waitForInitialGatekeeperIndexSync(): Promise<void> {
 
 async function exportLoop(): Promise<void> {
     try {
-        await syncGatekeeperIndexToStore('exportLoop');
+        const sync = await importPipeline.refreshIndex('exportLoop');
+        await peerSyncCoordinator.handleIndexRefreshed('exportLoop', sync);
         await queueCoordinator.flush();
     } catch (error) {
         log.error({ error }, 'Error in exportLoop');
@@ -342,7 +332,9 @@ async function exportLoop(): Promise<void> {
 }
 
 async function checkConnections(): Promise<void> {
-    expireIdlePeerSessions();
+    const now = Date.now();
+    negentropyCoordinator.expire(now);
+    orderedCatchupCoordinator.expire(now);
     transport.expireStaleConnections();
 
     if (transport.getPeerKeys().length === 0) {
