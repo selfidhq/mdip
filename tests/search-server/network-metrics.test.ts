@@ -229,6 +229,39 @@ describe('network metric snapshot builder', () => {
         });
     });
 
+    it('counts every created DID once and retains deleted DIDs', async () => {
+        const assetDid = 'did:test:asset';
+        const asset: DIDEventHistory = {
+            did: assetDid,
+            events: [
+                createEvent(assetDid, {
+                    type: 'create',
+                    created: '2026-08-02T00:00:00.000Z',
+                    mdip: { version: 1, type: 'asset', registry: 'hyperswarm' },
+                    controller: 'did:test:holder',
+                    data: { title: 'ordinary asset' },
+                }),
+                createEvent(assetDid, { type: 'delete', did: assetDid }),
+            ],
+        };
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory('did:test:agent', '2026-08-01T00:00:00.000Z'),
+            asset,
+            { did: 'did:mdip:asset', events: asset.events },
+            createCredentialHistory('did:test:encrypted', '2026-08-03T00:00:00.000Z'),
+        ], new Date('2026-08-03T12:00:00.000Z'));
+
+        expect(result.snapshots.map(({ date, didCount }) => ({ date, didCount }))).toStrictEqual([
+            { date: '2026-08-01', didCount: 1 },
+            { date: '2026-08-02', didCount: 2 },
+            { date: '2026-08-03', didCount: 3 },
+        ]);
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 1,
+        });
+    });
+
     it('builds snapshots only for the configured network', async () => {
         const testHolder = 'did:test:test-holder';
         const mdipHolder = 'did:mdip:mdip-holder';
@@ -246,10 +279,13 @@ describe('network metric snapshot builder', () => {
         ];
         const now = new Date('2026-08-01T12:00:00.000Z');
 
+        const unfiltered = await buildNetworkMetricSnapshots(histories, now);
         const test = await buildNetworkMetricSnapshots(histories, now, 'did:test');
         const mdip = await buildNetworkMetricSnapshots(histories, now, 'did:mdip');
 
         expect(test.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:test': 3 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:test': 1 },
             credentialCount: 1,
@@ -257,12 +293,17 @@ describe('network metric snapshot builder', () => {
             schemas: [{ schemaDid: 'did:test:test-schema', count: 1 }],
         });
         expect(mdip.snapshots.at(-1)).toMatchObject({
+            didCount: 3,
+            didCountsByPrefix: { 'did:mdip': 3 },
             agentDidCount: 1,
             agentDidCountsByPrefix: { 'did:mdip': 1 },
             credentialCount: 1,
             credentialDidCountsByPrefix: { 'did:mdip': 1 },
             schemas: [{ schemaDid: 'did:mdip:mdip-schema', count: 1 }],
         });
+        expect(unfiltered.snapshots.at(-1)?.didCount).toBe(6);
+        expect((test.snapshots.at(-1)?.didCount ?? 0) + (mdip.snapshots.at(-1)?.didCount ?? 0))
+            .toBe(unfiltered.snapshots.at(-1)?.didCount);
     });
 
     it('uses manifest prefixes only when asset operations do not identify the network', async () => {
@@ -292,9 +333,28 @@ describe('network metric snapshot builder', () => {
         ], new Date('2026-08-01T12:00:00.000Z'), 'did:mdip');
 
         expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 2,
+            didCountsByPrefix: { 'did:mdip': 2 },
             credentialCount: 1,
             credentialDidCountsByPrefix: { 'did:mdip': 1 },
             schemas: [{ schemaDid: 'did:mdip:legacy-schema', count: 1 }],
+        });
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const publisherDid = 'did:test:publisher';
+        const result = await buildNetworkMetricSnapshots([
+            createAgentHistory(publisherDid, '2026-08-01T00:00:00.000Z', [
+                manifestUpdate(publisherDid, 'did:mdip:referenced-agent'),
+            ]),
+            createAgentHistory('did:test:referenced-agent', '2026-08-01T00:00:00.000Z'),
+        ], new Date('2026-08-01T12:00:00.000Z'));
+
+        expect(result.snapshots.at(-1)).toMatchObject({
+            didCount: 2,
+            didCountsByPrefix: { 'did:test': 2 },
+            agentDidCount: 2,
+            agentDidCountsByPrefix: { 'did:test': 2 },
         });
     });
 

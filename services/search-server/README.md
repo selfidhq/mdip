@@ -162,20 +162,6 @@ stored alias's prefix.
     - `503 Service Unavailable` while snapshots are rebuilding for the
       configured network scope.
 
-### `GET /api/v1/metrics/snapshots/:date`
-- **Description**: Returns the complete cumulative network snapshot for one
-  UTC day in one database read. This keeps all totals and schema usage from the
-  same rebuild generation.
-- **Path Param**:
-    - `date` (required, `YYYY-MM-DD`, must not be in the future)
-- **Returns**:
-    - `200 OK` + the stored snapshot, including all-DID, AgentDID, credential,
-      and per-schema counts plus `date` and `rebuiltAt`.
-    - `400 Bad Request` for an invalid or future date.
-    - `404 Not Found` when no snapshot exists for the date.
-    - `503 Service Unavailable` while snapshots are rebuilding for the
-      configured network scope.
-
 ### `GET /api/v1/metrics/snapshots/schemas/:date`
 - **Description**: Returns cumulative credential counts grouped by schema DID for one UTC day.
 - **Path Param**:
@@ -224,15 +210,14 @@ stored alias's prefix.
 
 ### Network metric snapshots
 
-All-DID and AgentDID snapshot dates come only from the `created` timestamps on
-their `create` operations. The all-DID total includes every indexed DID
-regardless of MDIP type or document contents and deduplicates prefix aliases by
-CID suffix. Credentials are identified from valid historical AgentDID manifest
-entries and dated by the `created` timestamp on their asset `create` operation
-when available, falling back to the manifest credential's `validFrom`.
-Hyperswarm receipt times and operation signature timestamps are not used. DIDs
-and AgentDIDs remain counted after deletion, and credentials remain counted
-after revocation or unpublishing.
+All-DID and AgentDID snapshot dates come only from anchor `create` operation
+`created` timestamps. The all-DID total includes every indexed DID regardless
+of MDIP type or document contents and deduplicates prefix aliases by CID suffix.
+Credentials are identified from valid historical AgentDID manifest entries and
+dated by their asset anchor `operation.created` when available, falling back to
+the manifest credential's `validFrom`. Hyperswarm receipt times and operation
+signature timestamps are not used. DIDs and AgentDIDs remain counted after
+deletion, and credentials remain counted after revocation or unpublishing.
 Private credentials that have never been published cannot be counted by
 search-server.
 
@@ -270,42 +255,10 @@ rebuild begins. Snapshot endpoints return `503` until the replacement snapshots
 and new scope marker have both been saved. This also applies when changing
 between a blank scope and `did:test` or `did:mdip`.
 
-### DID network classification
-
-The effective prefix precedence is:
-
-1. The signed create operation's explicit `mdip.prefix`.
-2. One unique prefix referenced by that DID's update/delete `operation.did`
-   values when the create has no explicit prefix.
-3. For otherwise unclassified credential and schema assets, one unique prefix
-   observed in valid entries across complete historical AgentDID manifests.
-4. `did:test` when no unique evidence exists.
-
-Create and update/delete evidence takes precedence over manifest evidence.
-Conflicting update/delete prefixes are authoritatively classified as
-`did:test`, so manifest evidence cannot move them into another network.
-Manifest evidence is stored by source AgentDID during indexing and survives
-credential unpublishing, keeping historical schema links resolvable in the same
-network scope. Conflicting manifest prefixes fall back to `did:test`. Prefix
-aliases sharing a CID suffix are deduplicated.
-
-Set `KC_SEARCH_SERVER_DID_PREFIX` to any `did:<method>` prefix, such as
-`did:test`, `did:mdip`, or `did:arbitrary`, to return only that network from
-DID, search, event, credential, challenge-receipt, and metric endpoints.
-Explicit DIDs using another prefix are excluded from the configured scope.
-Leave the setting empty to return every indexed network.
-
-Changing the configured scope invalidates the stored snapshot scope before a
-rebuild begins. Snapshot endpoints return `503` until the replacement snapshots
-and new scope marker have both been saved. This also applies when changing
-between a blank scope and `did:test` or `did:mdip`.
-
 Each snapshot stores cumulative all-DID, AgentDID, and credential totals plus
 credential counts grouped by schema DID, ordered from most to least used.
-Request a complete snapshot from `/metrics/snapshots/:date`, or use the
-specialized `/metrics/snapshots/dids/:date`, `/agents/:date`,
-`/credentials/:date`, and `/schemas/:date` endpoints when only one metric is
-needed.
+Request the total DID count from `/metrics/snapshots/dids/:date` and the schema
+breakdown from `/metrics/snapshots/schemas/:date`.
 `/metrics/schemas/published` describes only the credentials currently present
 in AgentDID manifests.
 Schema prefix aliases sharing the same DID suffix are combined under the
