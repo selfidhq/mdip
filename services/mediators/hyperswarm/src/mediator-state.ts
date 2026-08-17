@@ -19,7 +19,6 @@ export interface ConnectionInfo {
     connection: HyperswarmConnection;
     peerName: string;
     nodeName: string;
-    did: string;
     lastSeen: number;
     capabilities: NegotiatedPeerCapabilities;
     syncMode: SyncMode | 'unknown';
@@ -51,7 +50,6 @@ export function createConnectionInfo(options: ConnectionInfoOptions): Connection
         connection: options.connection,
         peerName: options.peerName,
         nodeName: options.nodeName ?? 'anon',
-        did: '',
         lastSeen: now,
         capabilities: {
             advertised: false,
