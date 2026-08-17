@@ -281,18 +281,19 @@ export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkM
     }
 }
 
-export async function fetchHyperswarmNetworkStatus(): Promise<HyperswarmNetworkStatus> {
-    const response = await axios.get(`${apiBaseUrl}/network`);
+export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkMetricSnapshot | null> {
+    try {
+        const [response, schemas] = await Promise.all([
+            axios.get(`${apiBaseUrl}/metrics/snapshots/credentials/${encodeURIComponent(date)}`),
+            fetchPublishedSchemaMetrics(date),
+        ]);
 
         return {
             agentDidCount: toNumber(response.data.agentDidCount),
             agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
             credentialCount: toNumber(response.data.credentialCount),
             credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
-            schemas: (response.data.schemas ?? []).map((row: any) => ({
-                schemaDid: row.schemaDid,
-                count: toNumber(row.count),
-            })),
+            schemas: schemas ?? [],
         };
     }
     catch (error: any) {

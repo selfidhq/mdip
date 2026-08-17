@@ -374,7 +374,6 @@ async function main() {
                 agentDidCountsByPrefix: snapshot.agentDidCountsByPrefix,
                 credentialCount: snapshot.credentialCount,
                 credentialDidCountsByPrefix: snapshot.credentialDidCountsByPrefix,
-                schemas: snapshot.schemas,
             });
         }
         catch (error) {
