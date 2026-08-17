@@ -10,8 +10,8 @@ import {
     Typography,
 } from "@mui/material";
 import {
-    fetchHyperswarmNetworkStatus,
-    type HyperswarmNetworkStatus,
+    fetchNetworkMetricSnapshot,
+    type NetworkMetricSnapshot,
 } from "../api/searchClient.js";
 import { networkPollIntervalMs } from "../config.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
@@ -35,15 +35,32 @@ function formatCount(value: number | null): string {
 
 function Network() {
     const { setError } = useSnackbar();
-    const [status, setStatus] = useState<HyperswarmNetworkStatus | null>(null);
-    const [message, setMessage] = useState("Loading network connections...");
+    const [searchParams, setSearchParams] = useSearchParams();
+    const currentDate = today();
+    const selectedDate = searchParams.get("date") || currentDate;
+    const [snapshot, setSnapshot] = useState<NetworkMetricSnapshot | null>(null);
+    const [message, setMessage] = useState("Loading network snapshot...");
 
     useEffect(() => {
         let ignore = false;
 
-        async function loadStatus() {
-            try {
-                const result = await fetchHyperswarmNetworkStatus();
+        setSnapshot(null);
+        setMessage("Loading network snapshot...");
+
+        fetchNetworkMetricSnapshot(selectedDate)
+            .then(result => {
+                if (ignore) {
+                    return;
+                }
+
+                if (!result) {
+                    setMessage("No network snapshot exists for this date.");
+                    return;
+                }
+
+                setSnapshot(result);
+            })
+            .catch(error => {
                 if (!ignore) {
                     setStatus(result);
                 }
@@ -78,10 +95,18 @@ function Network() {
                 <>
                     <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 3 }}>
                         {[
-                            { label: "Visible nodes", value: status.totals.visibleNodes },
-                            { label: "Connected peers", value: status.totals.connectedPeers },
-                            { label: "Local operations", value: status.node.operationCount },
-                        ].map(({ label, value }) => (
+                            {
+                                label: "Agent DIDs",
+                                value: snapshot.agentDidCount,
+                                prefixes: snapshot.agentDidCountsByPrefix,
+                            },
+                            {
+                                label: "Credentials",
+                                value: snapshot.credentialCount,
+                                prefixes: snapshot.credentialDidCountsByPrefix,
+                            },
+                            { label: "Schemas in use", value: snapshot.schemas.length },
+                        ].map(({ label, value, prefixes }) => (
                             <Box
                                 key={label}
                                 sx={{
@@ -99,26 +124,9 @@ function Network() {
                         ))}
                     </Box>
 
-                    <Box sx={{ mb: 3 }}>
-                        <Typography variant="overline">This node</Typography>
-                        <Box sx={{ display: "flex", gap: 4, alignItems: "baseline", flexWrap: "wrap" }}>
-                            <Typography>{status.node.name}</Typography>
-                            <Typography
-                                title={status.node.peerId}
-                                color="text.secondary"
-                                sx={{ fontFamily: "Courier, monospace" }}
-                            >
-                                {formatPeerId(status.node.peerId)}
-                            </Typography>
-                            <Typography color="text.secondary">
-                                Updated {formatTimestamp(status.generatedAt)}
-                            </Typography>
-                        </Box>
-                    </Box>
-
-                    <Typography variant="h6" sx={{ mb: 1 }}>Connected peers</Typography>
-                    {status.peers.length === 0 ? (
-                        <Typography>No direct peers are currently connected.</Typography>
+                    <Typography variant="h6" sx={{ mb: 1 }}>Schema usage</Typography>
+                    {snapshot.schemas.length === 0 ? (
+                        <Typography>No credential schemas were in use on this date.</Typography>
                     ) : (
                         <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
                             <Table size="small">
@@ -131,14 +139,26 @@ function Network() {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {status.peers.map(peer => (
-                                        <TableRow key={peer.peerId}>
-                                            <TableCell>{peer.name}</TableCell>
-                                            <TableCell
-                                                title={peer.peerId}
-                                                sx={{ fontFamily: "Courier, monospace" }}
-                                            >
-                                                {formatPeerId(peer.peerId)}
+                                    {snapshot.schemas.map((schema, index) => (
+                                        <TableRow key={schema.schemaDid}>
+                                            <TableCell>{index + 1}</TableCell>
+                                            <TableCell>
+                                                <Typography
+                                                    component={RouterLink}
+                                                    to={`/search?did=${encodeURIComponent(schema.schemaDid)}`}
+                                                    title={schema.schemaDid}
+                                                    sx={{
+                                                        display: "block",
+                                                        color: "primary.main",
+                                                        fontFamily: "Courier, monospace",
+                                                        overflow: "hidden",
+                                                        textDecoration: "underline",
+                                                        textOverflow: "ellipsis",
+                                                        whiteSpace: "nowrap",
+                                                    }}
+                                                >
+                                                    {schema.schemaDid}
+                                                </Typography>
                                             </TableCell>
                                             <TableCell align="right">{formatCount(peer.operationCount)}</TableCell>
                                             <TableCell>{formatTimestamp(peer.lastSeen)}</TableCell>

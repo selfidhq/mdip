@@ -667,34 +667,6 @@ describe('search DB branch behavior', () => {
                 return { rowCount: 1, rows: [] };
             }
 
-            if (text.includes('DELETE FROM identity_schemas')) {
-                if (params.length === 0) identitySchemas.clear();
-                else identitySchemas.delete(String(params[0]));
-                return { rowCount: 1, rows: [] };
-            }
-
-            if (text.includes('INSERT INTO identity_schemas')) {
-                const did = String(params[0]);
-                const schemas = identitySchemas.get(did) ?? new Set<string>();
-                schemas.add(String(params[1]));
-                identitySchemas.set(did, schemas);
-                return { rowCount: 1, rows: [] };
-            }
-
-            if (text.includes('DELETE FROM identity_fields')) {
-                if (params.length === 0) identityFields.clear();
-                else identityFields.delete(String(params[0]));
-                return { rowCount: 1, rows: [] };
-            }
-
-            if (text.includes('INSERT INTO identity_fields')) {
-                const did = String(params[0]);
-                const fields = identityFields.get(did) ?? new Set<string>();
-                fields.add(JSON.stringify(params.slice(1)));
-                identityFields.set(did, fields);
-                return { rowCount: 1, rows: [] };
-            }
-
             if (text.includes('DELETE FROM challenge_receipts')) {
                 const deleted = challengeReceipts.delete(String(params[0]));
                 return { rowCount: deleted ? 1 : 0, rows: [] };
@@ -881,6 +853,20 @@ describe('search DB branch behavior', () => {
         expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
         expect(identitySchemas.size).toBe(0);
         expect(identityFields.size).toBe(0);
+
+        const reclassifiedDid = eventDid.replace('did:test:', 'did:mdip:');
+        await db.applyIndexPage({
+            dids: [{ did: eventDid, events: [didEventA] }],
+            blocks: [],
+        });
+        const reclassifiedEvent = structuredClone(didEventA);
+        reclassifiedEvent.operation.mdip!.prefix = 'did:mdip';
+        await db.applyIndexPage({
+            dids: [{ did: reclassifiedDid, events: [reclassifiedEvent] }],
+            blocks: [],
+        });
+        expect(await db.getDIDEvents(eventDid)).toStrictEqual([]);
+        expect(await db.findDIDBySuffix('event-storage', 'did:mdip')).toBe(reclassifiedDid);
 
         await db.disconnect();
         expect(mockPool.end).toHaveBeenCalledTimes(1);

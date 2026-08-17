@@ -58,25 +58,15 @@ function parseCsv(value: string | undefined): string[] {
         .filter(Boolean);
 }
 
-export function parseDidPrefix(value: string | undefined): string | undefined {
+export function parseDidPrefix(value: string | undefined): 'did:test' | 'did:mdip' | undefined {
     const normalized = value?.trim();
     if (!normalized) {
         return undefined;
     }
-    if (/^did:[^:]+$/.test(normalized)) {
+    if (normalized === 'did:test' || normalized === 'did:mdip') {
         return normalized;
     }
-    throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be a did:<method> prefix or empty');
-}
-
-export function parseSearchDb(value: string | undefined): SearchDb {
-    const db = value || 'sqlite';
-
-    if (db === 'sqlite' || db === 'postgres' || db === 'memory') {
-        return db;
-    }
-
-    throw new Error(`Unsupported KC_SEARCH_SERVER_DB "${db}", expected sqlite, postgres, or memory`);
+    throw new Error('KC_SEARCH_SERVER_DID_PREFIX must be did:test, did:mdip, or empty');
 }
 
 const configuredSkipPaths = parseCsv(process.env.KC_SEARCH_SERVER_RATE_LIMIT_SKIP_PATHS);
@@ -91,7 +81,7 @@ const config = {
         60 * 60 * 1000
     ),
     didPrefix: parseDidPrefix(process.env.KC_SEARCH_SERVER_DID_PREFIX),
-    db: parseSearchDb(process.env.KC_SEARCH_SERVER_DB),
+    db: process.env.KC_SEARCH_SERVER_DB || 'sqlite',
     postgresURL: process.env.KC_SEARCH_SERVER_POSTGRES_URL
         || process.env.KC_POSTGRES_URL
         || 'postgresql://mdip:mdip@localhost:5432/mdip',

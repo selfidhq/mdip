@@ -337,15 +337,6 @@ export default class DidIndexer {
 
             const now = new Date();
             const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
-            if (!lastRebuiltAt && syncRun) {
-                const isQuietChangesRun = syncRun.mode === 'changes' && syncRun.changedDids === 0;
-                this.initialMetricsQuietRuns = isQuietChangesRun
-                    ? this.initialMetricsQuietRuns + 1
-                    : 0;
-                if (this.initialMetricsQuietRuns < INITIAL_METRICS_QUIET_RUNS) {
-                    return;
-                }
-            }
             const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
             const currentMetricsDidPrefix = this.didPrefix ?? '';
             const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;

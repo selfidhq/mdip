@@ -65,31 +65,6 @@ export interface NetworkMetricSnapshot {
     schemas: PublishedSchemaMetric[];
 }
 
-export interface HyperswarmPeerStatus {
-    name: string;
-    peerId: string;
-    lastSeen: string;
-    syncMode: "negentropy" | "unknown";
-    operationCount: number | null;
-    orderedOperationCount: number | null;
-}
-
-export interface HyperswarmNetworkStatus {
-    generatedAt: string;
-    protocol: string;
-    node: {
-        name: string;
-        peerId: string;
-        operationCount: number;
-        orderedOperationCount: number;
-    };
-    totals: {
-        visibleNodes: number;
-        connectedPeers: number;
-    };
-    peers: HyperswarmPeerStatus[];
-}
-
 export interface PublishedCredentialRow {
     holderDid: string;
     credentialDid: string;
@@ -309,7 +284,24 @@ export async function fetchNetworkMetricSnapshot(date: string): Promise<NetworkM
 export async function fetchHyperswarmNetworkStatus(): Promise<HyperswarmNetworkStatus> {
     const response = await axios.get(`${apiBaseUrl}/network`);
 
-    return response.data as HyperswarmNetworkStatus;
+        return {
+            agentDidCount: toNumber(response.data.agentDidCount),
+            agentDidCountsByPrefix: mapPrefixCounts(response.data.agentDidCountsByPrefix),
+            credentialCount: toNumber(response.data.credentialCount),
+            credentialDidCountsByPrefix: mapPrefixCounts(response.data.credentialDidCountsByPrefix),
+            schemas: (response.data.schemas ?? []).map((row: any) => ({
+                schemaDid: row.schemaDid,
+                count: toNumber(row.count),
+            })),
+        };
+    }
+    catch (error: any) {
+        if (error?.response?.status === 404) {
+            return null;
+        }
+
+        throw error;
+    }
 }
 
 export async function fetchPublishedCredentials(

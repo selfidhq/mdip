@@ -18,11 +18,6 @@ export function getDIDSuffix(did: string): string {
     return did.split(':').pop()!;
 }
 
-export function isAgentDID(events: GatekeeperEvent[]): boolean {
-    const anchor = events[0]?.operation;
-    return anchor?.type === 'create' && anchor.mdip?.type === 'agent';
-}
-
 function isDIDPrefix(value: unknown): value is string {
     return typeof value === 'string' && /^did:[^:]+$/.test(value);
 }
@@ -67,12 +62,8 @@ export function canonicalDID(did: string, events: GatekeeperEvent[]): string {
 }
 
 export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: string) {
-    if (!isValidDID(did)) {
-        return { storedDid: did, resolutionDid: did, events: await didDb.getDIDEvents(did) };
-    }
-
     const requestedDid = didPrefix ? `${didPrefix}:${getDIDSuffix(did)}` : did;
-    if (didPrefix) {
+    if (didPrefix && isValidDID(did)) {
         const storedDid = await didDb.findDIDBySuffix(getDIDSuffix(did), didPrefix);
         return storedDid
             ? { storedDid, resolutionDid: requestedDid, events: await didDb.getDIDEvents(storedDid) }
@@ -80,7 +71,7 @@ export async function findDIDReadTarget(didDb: DIDsDb, did: string, didPrefix?: 
     }
 
     const events = await didDb.getDIDEvents(requestedDid);
-    if (events.length > 0) {
+    if (events.length > 0 || !isValidDID(did)) {
         return { storedDid: requestedDid, resolutionDid: requestedDid, events };
     }
 

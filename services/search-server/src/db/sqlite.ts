@@ -24,13 +24,15 @@ import {
     GatekeeperEvent,
 } from "../types.js";
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import { deduplicateDIDPrefixReferences, extractIdentity, extractIdentityFields } from '../published-credentials.js';
+import {
+    deduplicateDIDPrefixReferences,
+    deduplicatePublishedCredentials,
+} from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
     getDIDPrefix,
     getDIDSuffix,
-    isAgentDID,
 } from '../did-aliases.js';
 
 interface HistoryEventRow {
@@ -93,15 +95,11 @@ export default class Sqlite implements DIDsDb {
                 suffix TEXT PRIMARY KEY,
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
-                prefix_authoritative INTEGER NOT NULL,
-                is_agent INTEGER NOT NULL
+                prefix_authoritative INTEGER NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
                 ON did_classifications (prefix);
-
-            CREATE INDEX IF NOT EXISTS idx_did_classifications_agents
-                ON did_classifications (is_agent, prefix, suffix);
 
             CREATE TABLE IF NOT EXISTS did_docs (
                                                     did TEXT PRIMARY KEY,
@@ -122,8 +120,12 @@ export default class Sqlite implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
+                credential_did TEXT NOT NULL,
                 credential_suffix TEXT NOT NULL,
+                credential_prefix TEXT NOT NULL,
+                schema_did TEXT NOT NULL,
                 schema_suffix TEXT NOT NULL,
+                schema_prefix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed INTEGER,
@@ -134,11 +136,11 @@ export default class Sqlite implements DIDsDb {
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
 
-            CREATE TABLE IF NOT EXISTS identity_schemas (
-                did TEXT NOT NULL,
-                schema_suffix TEXT NOT NULL,
-                PRIMARY KEY (did, schema_suffix)
-            );
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
+                ON published_credentials (credential_suffix, schema_suffix);
+
+            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
+                ON published_credentials (schema_did, issuer_did);
 
             CREATE TABLE IF NOT EXISTS identity_fields (
                 did TEXT NOT NULL,
@@ -179,6 +181,44 @@ export default class Sqlite implements DIDsDb {
                 SELECT pc.*,
                        CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
                        CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                FROM published_credentials pc
+                LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
+                LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
+                JOIN did_reference_prefixes cr ON cr.suffix = pc.credential_suffix
+                JOIN did_reference_prefixes sr ON sr.suffix = pc.schema_suffix;
+
+            CREATE TABLE IF NOT EXISTS did_prefix_references (
+                source_did TEXT NOT NULL,
+                suffix TEXT NOT NULL,
+                prefix TEXT NOT NULL,
+                PRIMARY KEY (source_did, suffix, prefix)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_did_prefix_references_suffix_prefix
+                ON did_prefix_references (suffix, prefix);
+
+            CREATE VIEW IF NOT EXISTS did_reference_prefixes AS
+                SELECT suffix,
+                       CASE WHEN MIN(prefix) = MAX(prefix)
+                           THEN MIN(prefix)
+                           ELSE '${AMBIGUOUS_DID_PREFIX}'
+                       END AS prefix
+                FROM did_prefix_references
+                GROUP BY suffix;
+
+            CREATE VIEW IF NOT EXISTS did_classifications_effective AS
+                SELECT dc.suffix,
+                       dc.did,
+                       CASE WHEN dc.prefix_authoritative THEN dc.prefix
+                           ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
+                       END AS prefix
+                FROM did_classifications dc
+                LEFT JOIN did_reference_prefixes rp ON rp.suffix = dc.suffix;
+
+            CREATE VIEW IF NOT EXISTS published_credentials_classified AS
+                SELECT pc.*,
+                       CASE WHEN cc.prefix_authoritative THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
                 FROM published_credentials pc
                 LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
                 LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
@@ -387,8 +427,6 @@ export default class Sqlite implements DIDsDb {
                     await this.db.run('DELETE FROM did_events WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [previous.did]);
-                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [previous.did]);
-                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [previous.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -406,8 +444,6 @@ export default class Sqlite implements DIDsDb {
                 if (record.removed) {
                     await this.db.run('DELETE FROM did_docs WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM published_credentials WHERE holder_did = ?', [record.did]);
-                    await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
-                    await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_prefix_references WHERE source_did = ?', [record.did]);
                     await this.db.run('DELETE FROM challenge_receipts WHERE receipt_did = ?', [record.did]);
                     await this.db.run('DELETE FROM did_classifications WHERE suffix = ?', [suffix]);
@@ -417,13 +453,12 @@ export default class Sqlite implements DIDsDb {
 
                 const classification = classifyDIDPrefix(record.events);
                 await this.db.run(`
-                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative) VALUES (?, ?, ?, ?)
                     ON CONFLICT(suffix) DO UPDATE SET
                         did=excluded.did,
                         prefix=excluded.prefix,
-                        prefix_authoritative=excluded.prefix_authoritative,
-                        is_agent=excluded.is_agent
-                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0]);
+                        prefix_authoritative=excluded.prefix_authoritative
+                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0]);
 
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
@@ -440,16 +475,6 @@ export default class Sqlite implements DIDsDb {
                 }
 
                 await this.replacePublishedCredentialsInTx(record.did, record.publishedCredentials ?? []);
-                await this.db.run('DELETE FROM identity_schemas WHERE did = ?', [record.did]);
-                for (const schemaSuffix of new Set((record.publishedCredentials ?? []).map(item => getDIDSuffix(item.schemaDid)))) {
-                    await this.db.run('INSERT INTO identity_schemas (did, schema_suffix) VALUES (?, ?)', [record.did, schemaSuffix]);
-                }
-                await this.db.run('DELETE FROM identity_fields WHERE did = ?', [record.did]);
-                for (const [suffix, fields] of extractIdentityFields(record.doc ?? {}, record.publishedCredentials ?? [])) {
-                    for (const field of fields) {
-                        await this.db.run('INSERT INTO identity_fields (did, field, schema_suffix) VALUES (?, ?, ?)', [record.did, field, suffix]);
-                    }
-                }
                 await this.replaceDIDPrefixReferencesInTx(
                     record.did,
                     record.didPrefixReferences ?? [],
@@ -488,47 +513,6 @@ export default class Sqlite implements DIDsDb {
             return null;
         }
         return JSON.parse(row.doc);
-    }
-
-    async listIdentities(options: IdentityListOptions = {}): Promise<IdentityListResult> {
-        return this.runExclusive(() => this.listIdentitiesUnlocked(options));
-    }
-
-    private async listIdentitiesUnlocked(options: IdentityListOptions): Promise<IdentityListResult> {
-        if (!this.db) {
-            throw new Error('SQLite DB not connected');
-        }
-        const { didPrefix, schemaDid, fields = [], limit = 50, offset = 0 } = options;
-        let from = `FROM did_classifications dc
-            JOIN did_docs d ON d.did = dc.did
-            WHERE dc.is_agent = 1 ${didPrefix ? 'AND dc.prefix = ?' : ''}`;
-        const params = didPrefix ? [didPrefix] : [];
-        if (fields.length > 0) {
-            from += ` AND EXISTS (
-                SELECT 1 FROM identity_fields idf
-                WHERE idf.did = dc.did AND idf.field IN (${fields.map(() => '?').join(',')})
-                ${schemaDid ? 'AND idf.schema_suffix = ?' : ''}
-            )`;
-            params.push(...fields);
-            if (schemaDid) params.push(getDIDSuffix(schemaDid));
-        }
-        else if (schemaDid) {
-            from += ` AND EXISTS (
-                SELECT 1 FROM identity_schemas ids
-                WHERE ids.did = dc.did AND ids.schema_suffix = ?
-            )`;
-            params.push(getDIDSuffix(schemaDid));
-        }
-        const count = await this.db.get<{ total: number }>(`SELECT COUNT(*) AS total ${from}`, params);
-        const rows = await this.db.all<{ did: string; doc: string }[]>(
-            `SELECT dc.prefix || ':' || dc.suffix AS did, d.doc ${from}
-             ORDER BY dc.prefix, dc.suffix LIMIT ? OFFSET ?`,
-            [...params, Math.max(0, limit), Math.max(0, offset)]
-        );
-        return {
-            total: count!.total,
-            identities: rows.map(row => extractIdentity(row.did, JSON.parse(row.doc), options)),
-        };
     }
 
     async getPublishedCredentialCountsBySchema(didPrefix?: string): Promise<PublishedCredentialSchemaCount[]> {
@@ -589,16 +573,13 @@ export default class Sqlite implements DIDsDb {
         }
 
         if (issuerDid) {
-            clauses.push("substr(pc.issuer_did, -(length(?) + 1)) = ':' || ?");
-            const suffix = getDIDSuffix(issuerDid);
-            params.push(suffix, suffix);
+            clauses.push('pc.issuer_did = ?');
+            params.push(issuerDid);
         }
 
         if (subjectDid) {
-            clauses.push(`pc.subject_did = (
-                SELECT did FROM did_classifications WHERE suffix = ?
-            )`);
-            params.push(getDIDSuffix(subjectDid));
+            clauses.push('pc.subject_did = ?');
+            params.push(subjectDid);
         }
 
         if (typeof revealed === 'boolean') {
@@ -1087,24 +1068,20 @@ export default class Sqlite implements DIDsDb {
     }
 
     async wipeDb(): Promise<void> {
-        await this.runExclusive(async () => {
-            if (!this.db) {
-                throw new Error('DB not connected');
-            }
-            await this.db.exec(`
-                DELETE FROM did_docs;
-                DELETE FROM did_events;
-                DELETE FROM did_classifications;
-                DELETE FROM blocks;
-                DELETE FROM published_credentials;
-                DELETE FROM identity_schemas;
-                DELETE FROM identity_fields;
-                DELETE FROM did_prefix_references;
-                DELETE FROM challenge_receipts;
-                DELETE FROM network_metric_snapshots;
-                DELETE FROM sync_state;
-            `);
-        });
+        if (!this.db) {
+            throw new Error('DB not connected');
+        }
+        await this.db.exec(`
+            DELETE FROM did_docs;
+            DELETE FROM did_events;
+            DELETE FROM did_classifications;
+            DELETE FROM blocks;
+            DELETE FROM published_credentials;
+            DELETE FROM did_prefix_references;
+            DELETE FROM challenge_receipts;
+            DELETE FROM network_metric_snapshots;
+            DELETE FROM sync_state;
+        `);
     }
 
     private buildChallengeReceiptWhere(
@@ -1116,8 +1093,8 @@ export default class Sqlite implements DIDsDb {
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
         if (options.didPrefix) {
-            clauses.push('dc.prefix = ?');
-            params.push(options.didPrefix);
+            clauses.push('receipt_did LIKE ?');
+            params.push(`${options.didPrefix}:%`);
         }
 
         if (receiptDid) {
@@ -1170,27 +1147,40 @@ export default class Sqlite implements DIDsDb {
             [holderDid]
         );
 
-        for (const record of records) {
+        for (const record of deduplicatePublishedCredentials(records)) {
             await this.db!.run(`
                 INSERT INTO published_credentials (
                     holder_did,
+                    credential_did,
                     credential_suffix,
+                    credential_prefix,
+                    schema_did,
                     schema_suffix,
+                    schema_prefix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(holder_did, credential_suffix) DO UPDATE SET
+                    credential_did = excluded.credential_did,
+                    credential_suffix = excluded.credential_suffix,
+                    credential_prefix = excluded.credential_prefix,
+                    schema_did = excluded.schema_did,
                     schema_suffix = excluded.schema_suffix,
+                    schema_prefix = excluded.schema_prefix,
                     issuer_did = excluded.issuer_did,
                     subject_did = excluded.subject_did,
                     revealed = excluded.revealed,
                     updated_at = excluded.updated_at
             `, [
                 record.holderDid,
+                record.credentialDid,
                 getDIDSuffix(record.credentialDid),
+                getDIDPrefix(record.credentialDid),
+                record.schemaDid,
                 getDIDSuffix(record.schemaDid),
+                getDIDPrefix(record.schemaDid),
                 record.issuerDid,
                 record.subjectDid,
                 record.revealed ? 1 : 0,
