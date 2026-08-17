@@ -337,6 +337,10 @@ export default class DidIndexer {
 
             const now = new Date();
             const lastRebuiltAt = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsLastRebuiltAt);
+            if (!lastRebuiltAt && syncRun &&
+                (syncRun.mode === 'snapshot' || syncRun.changedDids > 0)) {
+                return;
+            }
             const metricsDidPrefix = await this.db.loadSyncState(INDEX_SYNC_STATE_KEYS.metricsDidPrefix);
             const currentMetricsDidPrefix = this.didPrefix ?? '';
             const lastRebuiltMs = lastRebuiltAt ? new Date(lastRebuiltAt).getTime() : Number.NaN;
