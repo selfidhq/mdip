@@ -65,7 +65,6 @@ const config = {
         '^\\.\\.?\\/did-aliases\\.js$': '<rootDir>/services/search-server/src/did-aliases.ts',
         '^\\.\\.?\\/published-credentials\\.js$': '<rootDir>/services/search-server/src/published-credentials.ts',
         '^\\.\\/challenge-receipts\\.js$': '<rootDir>/services/search-server/src/challenge-receipts.ts',
-        '^\\.\\.\\/config\\.js$': '<rootDir>/services/explorer/src/config.ts',
         '^\\.\\/cipher-base\\.js$': '<rootDir>/packages/cipher/src/cipher-base.ts',
         '^\\.\\/encryption\\.js$': '<rootDir>/packages/keymaster/src/encryption.ts',
         '^(\\.{1,2}/.*)\\.js$': '$1',
