@@ -33,6 +33,7 @@ import {
     classifyDIDPrefix,
     getDIDPrefix,
     getDIDSuffix,
+    isAgentDID,
 } from '../did-aliases.js';
 
 interface HistoryEventRow {
@@ -95,7 +96,8 @@ export default class Sqlite implements DIDsDb {
                 suffix TEXT PRIMARY KEY,
                 did TEXT NOT NULL UNIQUE,
                 prefix TEXT NOT NULL,
-                prefix_authoritative INTEGER NOT NULL
+                prefix_authoritative INTEGER NOT NULL,
+                is_agent INTEGER NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_did_classifications_prefix
@@ -209,7 +211,7 @@ export default class Sqlite implements DIDsDb {
             CREATE VIEW IF NOT EXISTS did_classifications_effective AS
                 SELECT dc.suffix,
                        dc.did,
-                       CASE WHEN dc.prefix_authoritative THEN dc.prefix
+                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
                            ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
                        END AS prefix
                 FROM did_classifications dc
@@ -217,8 +219,8 @@ export default class Sqlite implements DIDsDb {
 
             CREATE VIEW IF NOT EXISTS published_credentials_classified AS
                 SELECT pc.*,
-                       CASE WHEN cc.prefix_authoritative THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
-                       CASE WHEN sc.prefix_authoritative THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
+                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
+                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
                 FROM published_credentials pc
                 LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
                 LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
@@ -453,12 +455,13 @@ export default class Sqlite implements DIDsDb {
 
                 const classification = classifyDIDPrefix(record.events);
                 await this.db.run(`
-                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative) VALUES (?, ?, ?, ?)
+                    INSERT INTO did_classifications (suffix, did, prefix, prefix_authoritative, is_agent) VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(suffix) DO UPDATE SET
                         did=excluded.did,
                         prefix=excluded.prefix,
-                        prefix_authoritative=excluded.prefix_authoritative
-                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0]);
+                        prefix_authoritative=excluded.prefix_authoritative,
+                        is_agent=excluded.is_agent
+                `, [suffix, record.did, classification.prefix, classification.authoritative ? 1 : 0, isAgentDID(record.events) ? 1 : 0]);
 
                 for (const [index, event] of record.events.entries()) {
                     await this.db.run(
@@ -573,13 +576,16 @@ export default class Sqlite implements DIDsDb {
         }
 
         if (issuerDid) {
-            clauses.push('pc.issuer_did = ?');
-            params.push(issuerDid);
+            clauses.push("substr(pc.issuer_did, -(length(?) + 1)) = ':' || ?");
+            const suffix = getDIDSuffix(issuerDid);
+            params.push(suffix, suffix);
         }
 
         if (subjectDid) {
-            clauses.push('pc.subject_did = ?');
-            params.push(subjectDid);
+            clauses.push(`pc.subject_did = (
+                SELECT did FROM did_classifications WHERE suffix = ?
+            )`);
+            params.push(getDIDSuffix(subjectDid));
         }
 
         if (typeof revealed === 'boolean') {
@@ -1093,8 +1099,8 @@ export default class Sqlite implements DIDsDb {
         const responseCommitment = 'responseCommitment' in options ? options.responseCommitment : undefined;
 
         if (options.didPrefix) {
-            clauses.push('receipt_did LIKE ?');
-            params.push(`${options.didPrefix}:%`);
+            clauses.push('dc.prefix = ?');
+            params.push(options.didPrefix);
         }
 
         if (receiptDid) {

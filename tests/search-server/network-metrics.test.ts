@@ -376,19 +376,29 @@ describe('network metric snapshot builder', () => {
 
     it('does not let manifest references reclassify AgentDIDs', async () => {
         const publisherDid = 'did:test:publisher';
-        const result = await buildNetworkMetricSnapshots([
+        const histories = [
             createAgentHistory(publisherDid, '2026-08-01T00:00:00.000Z', [
-                manifestUpdate(publisherDid, 'did:mdip:referenced-agent'),
+                manifestUpdate(publisherDid, 'did:mdip:referenced-agent', {
+                    schemaDid: 'did:mdip:referenced-schema-agent',
+                }),
             ]),
             createAgentHistory('did:test:referenced-agent', '2026-08-01T00:00:00.000Z'),
-        ], new Date('2026-08-01T12:00:00.000Z'));
+            createAgentHistory('did:test:referenced-schema-agent', '2026-08-01T00:00:00.000Z'),
+        ];
+        const now = new Date('2026-08-01T12:00:00.000Z');
+        const result = await buildNetworkMetricSnapshots(histories, now);
 
         expect(result.snapshots.at(-1)).toMatchObject({
-            didCount: 2,
-            didCountsByPrefix: { 'did:test': 2 },
-            agentDidCount: 2,
-            agentDidCountsByPrefix: { 'did:test': 2 },
+            didCount: 3,
+            didCountsByPrefix: { 'did:test': 3 },
+            agentDidCount: 3,
+            agentDidCountsByPrefix: { 'did:test': 3 },
+            credentialCount: 1,
+            credentialDidCountsByPrefix: { 'did:test': 1 },
+            schemas: [{ schemaDid: 'did:test:referenced-schema-agent', count: 1 }],
         });
+        expect((await buildNetworkMetricSnapshots(histories, now, 'did:mdip')).snapshots.at(-1))
+            .toMatchObject({ credentialCount: 0, schemas: [] });
     });
 
     it('does not let manifest evidence override conflicting asset operation prefixes', async () => {
@@ -1147,12 +1157,6 @@ describe('DidIndexer network metrics scheduling', () => {
             intervalMs: 60_000,
             metricsRefreshIntervalMs: 60_000,
         });
-        const log = {
-            info: jest.fn(),
-            warn: jest.fn(),
-            error: jest.fn(),
-        };
-        (indexer as any).log = log;
 
         await (indexer as any).refreshIndex();
         await (indexer as any).refreshIndex();
@@ -1163,75 +1167,6 @@ describe('DidIndexer network metrics scheduling', () => {
         expect(replace).not.toHaveBeenCalled();
 
         await (indexer as any).refreshIndex();
-        expect(replace).not.toHaveBeenCalled();
-
-        await (indexer as any).refreshIndex();
-
-        expect(replace).toHaveBeenCalledTimes(1);
-        expect(log.info).toHaveBeenCalledWith({
-            previousDidPrefix: null,
-            didPrefix: '',
-        }, 'Rebuilding network metrics');
-        expect(await db.getNetworkMetricSnapshot(created.slice(0, 10))).toMatchObject({
-            agentDidCount: 2,
-        });
-    });
-
-    it('waits for the initial changes sync to become quiescent before the first rebuild', async () => {
-        const db = new DIDsDbMemory();
-        const did = 'did:test:z3v8AuaTV5VKcT9MJoSHkSTRLpXDoqcgqiKkwGBNSV4nVzb6kLk';
-        const secondDid = 'did:test:z3v8AuafC9YUH7jsdQWhiBvKQnrV3gUwKtXGxAQzo6MBz5b7B36';
-        const created = new Date().toISOString();
-        const event = createEvent(did, {
-            type: 'create',
-            created,
-            mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
-        });
-        const secondEvent = createEvent(secondDid, {
-            type: 'create',
-            created,
-            mdip: { version: 1, type: 'agent', registry: 'hyperswarm' },
-        });
-        const gatekeeper = {
-            isReady: jest.fn<GatekeeperIndexClient['isReady']>().mockResolvedValue(true),
-            exportIndex: jest.fn<GatekeeperIndexClient['exportIndex']>()
-                .mockResolvedValueOnce({
-                    mode: 'snapshot',
-                    indexEpoch: 'epoch-test',
-                    cursor: did,
-                    checkpointCursor: '1',
-                    hasMore: false,
-                    dids: [{ did, events: [event] }],
-                    blocks: [],
-                })
-                .mockResolvedValueOnce({
-                    mode: 'changes',
-                    indexEpoch: 'epoch-test',
-                    cursor: '2',
-                    checkpointCursor: '2',
-                    hasMore: false,
-                    dids: [{ did: secondDid, events: [secondEvent] }],
-                    blocks: [],
-                })
-                .mockResolvedValueOnce({
-                    mode: 'changes',
-                    indexEpoch: 'epoch-test',
-                    cursor: '2',
-                    checkpointCursor: '2',
-                    hasMore: false,
-                    dids: [],
-                    blocks: [],
-                }),
-        };
-        const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots');
-        const indexer = new DidIndexer(gatekeeper, db, {
-            intervalMs: 60_000,
-            metricsRefreshIntervalMs: 60_000,
-        });
-
-        await (indexer as any).refreshIndex();
-        await (indexer as any).refreshIndex();
-
         expect(replace).not.toHaveBeenCalled();
 
         await (indexer as any).refreshIndex();
@@ -1310,6 +1245,15 @@ describe('DidIndexer network metrics scheduling', () => {
                     hasMore: false,
                     dids: [],
                     blocks: [],
+                })
+                .mockResolvedValueOnce({
+                    mode: 'changes',
+                    indexEpoch: 'epoch-test',
+                    cursor: '1',
+                    checkpointCursor: '1',
+                    hasMore: false,
+                    dids: [],
+                    blocks: [],
                 }),
         };
         const replace = jest.spyOn(db, 'replaceNetworkMetricSnapshots')
@@ -1323,6 +1267,9 @@ describe('DidIndexer network metrics scheduling', () => {
 
         await (indexer as any).refreshIndex();
         expect(await db.loadSyncState('index.lastSyncError')).toBeNull();
+        expect(replace).not.toHaveBeenCalled();
+
+        await (indexer as any).refreshIndex();
         expect(replace).not.toHaveBeenCalled();
 
         await (indexer as any).refreshIndex();

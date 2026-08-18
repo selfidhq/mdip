@@ -13,7 +13,7 @@ import {
     fetchNetworkMetricSnapshot,
     type NetworkMetricSnapshot,
 } from "../api/searchClient.js";
-import { networkPollIntervalMs } from "../config.js";
+import { readinessPollIntervalMs } from "../config.js";
 import { useSnackbar } from "../contexts/SnackbarProvider.js";
 
 function formatPeerId(peerId: string): string {
@@ -43,45 +43,48 @@ function Network() {
 
     useEffect(() => {
         let ignore = false;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
         setSnapshot(null);
         setMessage("Loading network snapshot...");
 
-        fetchNetworkMetricSnapshot(selectedDate)
-            .then(result => {
-                if (ignore) {
-                    return;
-                }
-
-                if (!result) {
-                    setMessage("No network snapshot exists for this date.");
-                    return;
-                }
-
-                setSnapshot(result);
-            })
-            .catch(error => {
-                if (!ignore) {
-                    setStatus(result);
-                }
-            }
-            catch (error: any) {
-                if (!ignore) {
-                    setStatus(null);
-                    setMessage("Network connection information is unavailable.");
-                    if (error?.response?.status !== 503) {
-                        setError(error);
+        function loadSnapshot() {
+            fetchNetworkMetricSnapshot(selectedDate)
+                .then(result => {
+                    if (ignore) {
+                        return;
                     }
-                }
-            }
+
+                    if (!result) {
+                        setMessage("No network snapshot exists for this date.");
+                        return;
+                    }
+
+                    setSnapshot(result);
+                })
+                .catch(error => {
+                    if (ignore) {
+                        return;
+                    }
+
+                    if (error?.response?.status === 503) {
+                        setMessage("Network metrics are rebuilding...");
+                        retryTimer = setTimeout(loadSnapshot, readinessPollIntervalMs);
+                        return;
+                    }
+
+                    setMessage("Unable to load the network snapshot.");
+                    setError(error);
+                });
         }
 
-        loadStatus();
-        const timer = setInterval(loadStatus, networkPollIntervalMs);
+        loadSnapshot();
 
         return () => {
             ignore = true;
-            clearInterval(timer);
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
         };
     }, [setError]);
 

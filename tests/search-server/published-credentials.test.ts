@@ -925,6 +925,45 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
         }
     });
 
+    it('matches subjectDid and issuerDid aliases by CID suffix', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:mdip:alias-holder';
+        const holderAlias = 'did:test:alias-holder';
+        const credential = {
+            holderDid,
+            credentialDid: 'did:mdip:alias-credential',
+            schemaDid: 'did:mdip:alias-schema',
+            issuerDid: holderDid,
+            subjectDid: holderDid,
+            revealed: false,
+            updatedAt: '2026-04-01T12:00:00.000Z',
+        };
+        const event = createSeedEvent(holderDid);
+        event.operation.mdip!.type = 'agent';
+        event.operation.mdip!.prefix = 'did:mdip';
+
+        try {
+            await seedDID(db, holderDid, {
+                events: [event],
+                publishedCredentials: [credential],
+            });
+
+            expect(await db.listPublishedCredentials({ subjectDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ issuerDid: holderAlias })).toStrictEqual({
+                total: 1,
+                credentials: [credential],
+            });
+            expect(await db.listPublishedCredentials({ subjectDid: 'did:test:other-holder' }))
+                .toStrictEqual({ total: 0, credentials: [] });
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
     it('uses unique published references for prefix-less credential and schema assets', async () => {
         const { db, cleanup } = await create();
         const holderDid = 'did:test:legacy-holder';
@@ -1001,6 +1040,67 @@ describe.each(adapterFactories)('$name query and utility behavior', ({ create })
             expect(await db.searchDocs('legacy-network-schema', 'did:mdip')).toStrictEqual([
                 publishedSchemaDid,
             ]);
+        }
+        finally {
+            await cleanup();
+        }
+    });
+
+    it('does not let manifest references reclassify AgentDIDs', async () => {
+        const { db, cleanup } = await create();
+        const holderDid = 'did:test:agent-holder';
+        const credentialDid = 'did:test:credential-agent';
+        const schemaDid = 'did:test:schema-agent';
+        const mdipCredentialDid = credentialDid.replace('did:test:', 'did:mdip:');
+        const mdipSchemaDid = schemaDid.replace('did:test:', 'did:mdip:');
+        const agentEvent = (did: string) => {
+            const event = createSeedEvent(did);
+            event.operation.mdip!.type = 'agent';
+            return event;
+        };
+
+        try {
+            await seedDID(db, credentialDid, {
+                events: [agentEvent(credentialDid)],
+                doc: { didDocumentData: { searchable: 'credential-agent-collision' } },
+            });
+            await seedDID(db, schemaDid, {
+                events: [agentEvent(schemaDid)],
+                doc: { didDocumentData: { searchable: 'schema-agent-collision' } },
+            });
+            await seedDID(db, holderDid, {
+                events: [agentEvent(holderDid)],
+                didPrefixReferences: [mdipCredentialDid, mdipSchemaDid],
+                publishedCredentials: [{
+                    holderDid,
+                    credentialDid: mdipCredentialDid,
+                    schemaDid: mdipSchemaDid,
+                    issuerDid: holderDid,
+                    subjectDid: holderDid,
+                    revealed: false,
+                    updatedAt: '2026-04-01T12:00:00.000Z',
+                }],
+            });
+
+            expect(await db.findDIDBySuffix('credential-agent', 'did:test')).toBe(credentialDid);
+            expect(await db.findDIDBySuffix('credential-agent', 'did:mdip')).toBeNull();
+            expect(await db.searchDocs('credential-agent-collision', 'did:test')).toStrictEqual([credentialDid]);
+            expect(await db.searchDocs('credential-agent-collision', 'did:mdip')).toStrictEqual([]);
+            expect(await db.queryDocs({
+                'didDocumentData.searchable': { $in: ['schema-agent-collision'] },
+            }, 'did:test')).toStrictEqual([schemaDid]);
+            expect((await db.listEvents({ didPrefix: 'did:mdip' })).events.some(
+                event => event.did === mdipCredentialDid || event.did === mdipSchemaDid
+            )).toBe(false);
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:test' })).toMatchObject({
+                total: 1,
+                credentials: [{ credentialDid, schemaDid }],
+            });
+            expect(await db.listPublishedCredentials({ didPrefix: 'did:mdip' })).toMatchObject({ total: 0 });
+            expect(await db.getPublishedCredentialCountsBySchema('did:test')).toStrictEqual([
+                { schemaDid, count: 1 },
+            ]);
+            expect(await db.getPublishedCredentialCountsBySchema('did:mdip')).toStrictEqual([]);
         }
         finally {
             await cleanup();
