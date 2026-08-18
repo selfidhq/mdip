@@ -23,10 +23,7 @@ import {
     GatekeeperEvent,
 } from '../types.js';
 import { getEventDisplayTime, stableStringify } from './db-utils.js';
-import {
-    deduplicateDIDPrefixReferences,
-    deduplicatePublishedCredentials,
-} from '../published-credentials.js';
+import { deduplicateDIDPrefixReferences } from '../published-credentials.js';
 import {
     AMBIGUOUS_DID_PREFIX,
     classifyDIDPrefix,
@@ -140,12 +137,8 @@ export default class Postgres implements DIDsDb {
 
             CREATE TABLE IF NOT EXISTS published_credentials (
                 holder_did TEXT NOT NULL,
-                credential_did TEXT NOT NULL,
                 credential_suffix TEXT NOT NULL,
-                credential_prefix TEXT NOT NULL,
-                schema_did TEXT NOT NULL,
                 schema_suffix TEXT NOT NULL,
-                schema_prefix TEXT NOT NULL,
                 issuer_did TEXT NOT NULL,
                 subject_did TEXT NOT NULL,
                 revealed BOOLEAN,
@@ -155,59 +148,6 @@ export default class Postgres implements DIDsDb {
 
             CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
                 ON published_credentials (credential_suffix, schema_suffix);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_suffixes
-                ON published_credentials (credential_suffix, schema_suffix);
-
-            CREATE INDEX IF NOT EXISTS idx_published_credentials_schema_issuer
-                ON published_credentials (schema_did, issuer_did);
-
-            CREATE TABLE IF NOT EXISTS identity_fields (
-                did TEXT NOT NULL,
-                field TEXT NOT NULL,
-                schema_suffix TEXT NOT NULL
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_identity_fields_lookup
-                ON identity_fields (did, md5(field), schema_suffix);
-
-            CREATE TABLE IF NOT EXISTS did_prefix_references (
-                source_did TEXT NOT NULL,
-                suffix TEXT NOT NULL,
-                prefix TEXT NOT NULL,
-                PRIMARY KEY (source_did, suffix, prefix)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_did_prefix_references_suffix_prefix
-                ON did_prefix_references (suffix, prefix);
-
-            CREATE OR REPLACE VIEW did_reference_prefixes AS
-                SELECT suffix,
-                       CASE WHEN MIN(prefix) = MAX(prefix)
-                           THEN MIN(prefix)
-                           ELSE '${AMBIGUOUS_DID_PREFIX}'
-                       END AS prefix
-                FROM did_prefix_references
-                GROUP BY suffix;
-
-            CREATE OR REPLACE VIEW did_classifications_effective AS
-                SELECT dc.suffix,
-                       dc.did,
-                       CASE WHEN dc.prefix_authoritative OR dc.is_agent THEN dc.prefix
-                           ELSE COALESCE(rp.prefix, '${AMBIGUOUS_DID_PREFIX}')
-                       END AS prefix
-                FROM did_classifications dc
-                LEFT JOIN did_reference_prefixes rp ON rp.suffix = dc.suffix;
-
-            CREATE OR REPLACE VIEW published_credentials_classified AS
-                SELECT pc.*,
-                       CASE WHEN cc.prefix_authoritative OR cc.is_agent THEN cc.prefix ELSE cr.prefix END AS credential_effective_prefix,
-                       CASE WHEN sc.prefix_authoritative OR sc.is_agent THEN sc.prefix ELSE sr.prefix END AS schema_effective_prefix
-                FROM published_credentials pc
-                LEFT JOIN did_classifications cc ON cc.suffix = pc.credential_suffix
-                LEFT JOIN did_classifications sc ON sc.suffix = pc.schema_suffix
-                JOIN did_reference_prefixes cr ON cr.suffix = pc.credential_suffix
-                JOIN did_reference_prefixes sr ON sr.suffix = pc.schema_suffix;
 
             CREATE TABLE IF NOT EXISTS did_prefix_references (
                 source_did TEXT NOT NULL,
@@ -1152,40 +1092,27 @@ export default class Postgres implements DIDsDb {
             [holderDid]
         );
 
-        for (const record of deduplicatePublishedCredentials(records)) {
+        for (const record of records) {
             await client.query(
                 `INSERT INTO published_credentials (
                     holder_did,
-                    credential_did,
                     credential_suffix,
-                    credential_prefix,
-                    schema_did,
                     schema_suffix,
-                    schema_prefix,
                     issuer_did,
                     subject_did,
                     revealed,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT (holder_did, credential_suffix) DO UPDATE SET
-                    credential_did = EXCLUDED.credential_did,
-                    credential_suffix = EXCLUDED.credential_suffix,
-                    credential_prefix = EXCLUDED.credential_prefix,
-                    schema_did = EXCLUDED.schema_did,
                     schema_suffix = EXCLUDED.schema_suffix,
-                    schema_prefix = EXCLUDED.schema_prefix,
                     issuer_did = EXCLUDED.issuer_did,
                     subject_did = EXCLUDED.subject_did,
                     revealed = EXCLUDED.revealed,
                     updated_at = EXCLUDED.updated_at`,
                 [
                     record.holderDid,
-                    record.credentialDid,
                     getDIDSuffix(record.credentialDid),
-                    getDIDPrefix(record.credentialDid),
-                    record.schemaDid,
                     getDIDSuffix(record.schemaDid),
-                    getDIDPrefix(record.schemaDid),
                     record.issuerDid,
                     record.subjectDid,
                     record.revealed,
