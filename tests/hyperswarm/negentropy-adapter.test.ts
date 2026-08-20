@@ -284,7 +284,6 @@ describe('NegentropyAdapter', () => {
             has: async () => false,
             count: async () => rows.length,
             countOrdered: async () => 0,
-            getLatestSignedTimestamp: async () => validTs,
             iterateSortedKeys: async (options: SyncStoreListOptions = {}) => {
                 if (options.after) {
                     return [];
@@ -447,7 +446,6 @@ describe('NegentropyAdapter', () => {
             async has() { return false; },
             async count() { return rows.length; },
             async countOrdered() { return 0; },
-            async getLatestSignedTimestamp() { return 5000; },
             async iterateSortedKeys(options: SyncStoreListOptions = {}) {
                 if (options.after) {
                     return [];

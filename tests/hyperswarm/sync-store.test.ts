@@ -427,29 +427,6 @@ describe('SqliteOperationSyncStore', () => {
 });
 
 describe('PostgresOperationSyncStore', () => {
-    it('reads the latest signed timestamp without loading operation payloads', async () => {
-        const store = new PostgresOperationSyncStore();
-        const calls: string[] = [];
-        const results = [
-            { rowCount: 1, rows: [{ signed_ts: '2000' }] },
-            { rowCount: 0, rows: [] },
-        ];
-        (store as any).pool = {
-            query: async (sql: string) => {
-                calls.push(sql);
-                return results.shift();
-            },
-        };
-
-        await expect(store.getLatestSignedTimestamp()).resolves.toBe(2000);
-        await expect(store.getLatestSignedTimestamp()).resolves.toBeNull();
-
-        const sql = calls[0].replace(/\s+/g, ' ').trim();
-        expect(sql).toContain('SELECT signed_ts FROM hyperswarm_sync_operations');
-        expect(sql).toContain('ORDER BY signed_ts DESC, id DESC LIMIT 1');
-        expect(sql).not.toContain('operation_json');
-    });
-
     it('reads only key columns for sorted key iteration', async () => {
         const store = new PostgresOperationSyncStore();
         const calls: Array<{ sql: string; params: unknown[] }> = [];
