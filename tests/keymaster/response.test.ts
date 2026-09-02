@@ -201,6 +201,250 @@ describe('verifyResponse', () => {
         expect(verify1.vps!.length).toBe(1);
     });
 
+    it('should reject a presentation whose signer is not its issuer', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        await keymaster.createId('Mallory');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [{ schema, issuers: [alice] }],
+        });
+
+        await keymaster.setCurrentId('Mallory');
+        const credential = await keymaster.bindCredential(schema, carol);
+        credential.issuer = alice;
+        const signed = await keymaster.addSignature(credential);
+        const vc = await keymaster.encryptJSON(signed, carol, { includeHash: true });
+
+        await keymaster.setCurrentId('Carol');
+        const vp = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vc),
+            victor,
+            { includeHash: true }
+        );
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toStrictEqual([]);
+    });
+
+    it('should reject a presentation without the requested schema', async () => {
+        await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema, carol);
+        credential.type = ['VerifiableCredential'];
+        const vc = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [{ schema }],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const plaintext = await keymaster.decryptMessage(vc);
+        const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toStrictEqual([]);
+    });
+
+    it('should reject a presentation whose plaintext does not match the credential hash', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schemaA = await keymaster.createSchema(mockSchema);
+        const schemaB = await keymaster.createSchema(mockSchema);
+        const vcA = await keymaster.issueCredential(await keymaster.bindCredential(schemaA, carol));
+        const vcB = await keymaster.issueCredential(await keymaster.bindCredential(schemaB, carol));
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [{ schema: schemaB, issuers: [alice] }],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const vp = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcB),
+            victor,
+            { includeHash: true }
+        );
+        const vcData = await keymaster.resolveAsset(vcA);
+        const vpData = await keymaster.resolveAsset(vp);
+        vpData.encrypted.cipher_hash = vcData.encrypted.cipher_hash;
+        await keymaster.updateAsset(vp, vpData);
+
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc: vcA, vp }],
+                requested: 1,
+                fulfilled: 1,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toStrictEqual([]);
+    });
+
+    it('should reject a presentation that is not encrypted JSON', async () => {
+        await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge();
+
+        await keymaster.setCurrentId('Carol');
+        const invalid = await keymaster.encryptMessage('not JSON', victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc: invalid, vp: invalid }],
+                requested: 0,
+                fulfilled: 1,
+                match: false,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        await expect(keymaster.verifyResponse(response, { publish: false }))
+            .rejects.toThrow('Invalid parameter: did not encrypted JSON');
+    });
+
+    it('should not count a presentation more than once', async () => {
+        const alice = await keymaster.createId('Alice');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema1 = await keymaster.createSchema(mockSchema);
+        const schema2 = await keymaster.createSchema(mockSchema);
+        const credential = await keymaster.bindCredential(schema1, carol);
+        const vc = await keymaster.issueCredential(credential);
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [
+                { schema: schema1, issuers: [alice] },
+                { schema: schema2, issuers: [alice] },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const plaintext = await keymaster.decryptMessage(vc);
+        const vp = await keymaster.encryptMessage(plaintext, victor, { includeHash: true });
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [{ vc, vp }, { vc, vp }],
+                requested: 2,
+                fulfilled: 2,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(false);
+        expect(verification.vps).toHaveLength(1);
+    });
+
+    it('should match credentials independently of presentation order', async () => {
+        const alice = await keymaster.createId('Alice');
+        await keymaster.createId('Bob');
+        const carol = await keymaster.createId('Carol');
+        const victor = await keymaster.createId('Victor');
+
+        await keymaster.setCurrentId('Alice');
+        const schema = await keymaster.createSchema(mockSchema);
+        const vcAlice = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol));
+
+        await keymaster.setCurrentId('Bob');
+        const vcBob = await keymaster.issueCredential(await keymaster.bindCredential(schema, carol));
+
+        await keymaster.setCurrentId('Victor');
+        const challenge = await keymaster.createChallenge({
+            credentials: [
+                { schema },
+                { schema, issuers: [alice] },
+            ],
+        });
+
+        await keymaster.setCurrentId('Carol');
+        const vpAlice = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcAlice),
+            victor,
+            { includeHash: true }
+        );
+        const vpBob = await keymaster.encryptMessage(
+            await keymaster.decryptMessage(vcBob),
+            victor,
+            { includeHash: true }
+        );
+        const response = await keymaster.encryptJSON({
+            response: {
+                challenge,
+                credentials: [
+                    { vc: vcAlice, vp: vpAlice },
+                    { vc: vcBob, vp: vpBob },
+                ],
+                requested: 2,
+                fulfilled: 2,
+                match: true,
+                responseNonce: 'mock-nonce',
+            },
+        }, victor);
+
+        await keymaster.setCurrentId('Victor');
+        const verification = await keymaster.verifyResponse(response, { publish: false });
+
+        expect(verification.match).toBe(true);
+        expect(verification.vps).toHaveLength(2);
+    });
+
     it('should not verify a invalid response to a single credential challenge', async () => {
         await keymaster.createId('Alice');
         await keymaster.createId('Carol');
