@@ -2,7 +2,7 @@
 
 
 # Stage 1: Build Stage
-FROM node:22.15.0-bullseye-slim AS builder
+FROM node:22.15.0-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ RUN cd search-server && npm run build
 
 
 # Stage 2: Production Runtime Stage
-FROM node:22.15.0-bullseye-slim AS runner
+FROM node:22.15.0-bookworm-slim AS runner
 
 # Install curl in runtime (useful for container healthchecks)
 RUN apt-get update && \
