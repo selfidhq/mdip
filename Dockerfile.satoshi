@@ -2,7 +2,7 @@
 
 
 # Stage 1: Build Stage
-FROM node:22.15.0-bookworm-slim AS builder
+FROM node:22.23.4-bookworm-slim AS builder
 
 # Install build dependencies required for native sqlite3 compilation
 RUN apt-get update && \
@@ -32,7 +32,7 @@ RUN cd satoshi && npm run build
 
 
 # Stage 2: Production Runtime Stage
-FROM node:22.15.0-bookworm-slim AS runner
+FROM node:22.23.4-bookworm-slim AS runner
 
 # Create non-root user early
 RUN addgroup --system --gid 1001 ops && \
